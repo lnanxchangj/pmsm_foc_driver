@@ -5,8 +5,8 @@
 *.bak
 *.tmp
 /backup/
-/MDK-ARM/RTE/
-/MDK-ARM/DebugConfig/
+pmsm_foc_driver/MDK-ARM/RTE/
+pmsm_foc_driver/MDK-ARM/DebugConfig/
 
 # =================================================================
 # 2. Keil MDK-ARM 工程文件 (只保留 .uvprojx)
