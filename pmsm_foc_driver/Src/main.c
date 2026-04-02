@@ -29,6 +29,7 @@
 /* USER CODE BEGIN Includes */
 #include "mc_config.h"
 #include "bsp_can.h"
+#include "CO_app_STM32.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,7 +50,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+CANopenNodeSTM32 canOpenNodeSTM32;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,11 +104,20 @@ int main(void)
   MX_MotorControl_Init();
   MX_CAN1_Init();
   MX_TIM14_Init();
+  MX_UART4_Init();
 
   /* Initialize interrupts */
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
-	BSP_CAN_Init();  /* BSP CAN test - send frames every 500ms */
+  HAL_UART_Transmit(&huart4, (uint8_t*)"Hello World\r\n", 13, HAL_MAX_DELAY);
+  /* CANopen initialization */
+  canOpenNodeSTM32.CANHandle = &hcan1;
+  canOpenNodeSTM32.HWInitFunction = MX_CAN1_Init;
+  canOpenNodeSTM32.timerHandle = &htim14;
+  canOpenNodeSTM32.desiredNodeID = 0x10;  /* Node ID = 16 */
+  canOpenNodeSTM32.baudrate = 500;         /* 500Kbps */
+  canopen_app_init(&canOpenNodeSTM32);
+
   MC_StopMotor1();
   HAL_Delay(100);
 
@@ -133,16 +143,17 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* Send CAN test frame every 500ms */
-    BSP_CAN_SendTestFrame();
+    /* CANopen process - call regularly */
+    canopen_app_process();
 
     /* Read current speed (RPM) */
     speed = MC_GetMecSpeedAverageMotor1();
     (void)speed;
-    HAL_Delay(500);
+    HAL_Delay(1);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
   }
   /* USER CODE END 3 */
 }
@@ -226,7 +237,12 @@ static void MX_NVIC_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim == canOpenNodeSTM32.timerHandle) {
+    canopen_app_interrupt();
+  }
+}
 /* USER CODE END 4 */
 
 /**
