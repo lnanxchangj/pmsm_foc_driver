@@ -24,6 +24,7 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+#include "bsp_can.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -105,6 +106,7 @@ int main(void)
   /* Initialize interrupts */
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
+	BSP_CAN_Init();  /* BSP CAN test - send frames every 500ms */
   MC_StopMotor1();
   HAL_Delay(100);
 
@@ -130,6 +132,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* Send CAN test frame every 500ms */
+    BSP_CAN_SendTestFrame();
+
     /* Read current speed (RPM) */
     speed = MC_GetMecSpeedAverageMotor1();
     (void)speed;
