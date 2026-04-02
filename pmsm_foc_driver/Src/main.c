@@ -58,7 +58,7 @@ void SystemClock_Config(void);
 static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 #define PI 3.14159265359f
-int16_t speed ;
+int16_t speed;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -109,13 +109,12 @@ int main(void)
   /* Initialize interrupts */
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Transmit(&huart4, (uint8_t*)"Hello World\r\n", 13, HAL_MAX_DELAY);
   /* CANopen initialization */
   canOpenNodeSTM32.CANHandle = &hcan1;
   canOpenNodeSTM32.HWInitFunction = MX_CAN1_Init;
   canOpenNodeSTM32.timerHandle = &htim14;
-  canOpenNodeSTM32.desiredNodeID = 0x10;  /* Node ID = 16 */
-  canOpenNodeSTM32.baudrate = 500;         /* 500Kbps */
+  canOpenNodeSTM32.desiredNodeID = 0x10; /* Node ID = 16 */
+  canOpenNodeSTM32.baudrate = 500;       /* 500Kbps */
   canopen_app_init(&canOpenNodeSTM32);
 
   MC_StopMotor1();
@@ -135,7 +134,7 @@ int main(void)
 
   /* Send speed ramp command after position ctrl is disabled */
 
-	MC_ProgramSpeedRampMotor1_F(0, 10);       /* 0 RPM, 1s ramp */
+  MC_ProgramSpeedRampMotor1_F(0, 10); /* 0 RPM, 1s ramp */
 
   /* USER CODE END 2 */
 
@@ -239,7 +238,8 @@ static void MX_NVIC_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  if (htim == canOpenNodeSTM32.timerHandle) {
+  if (htim == canOpenNodeSTM32.timerHandle)
+  {
     canopen_app_interrupt();
   }
 }
