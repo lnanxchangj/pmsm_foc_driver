@@ -24,11 +24,11 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-#include "bsp_can.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "mc_config.h"
+#include "bsp_can.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
