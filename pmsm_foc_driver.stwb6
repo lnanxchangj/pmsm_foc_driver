@@ -1,8 +1,8 @@
 {
-  "version": 8,
+  "version": 16,
   "algorithm": "FOC",
   "description": "",
-  "workBenchVersion": "6.4.1",
+  "workBenchVersion": "6.4.2",
   "workBenchVersionFileCreation": "6.4.1",
   "hardwares": {
     "type": "INVERTER",
@@ -908,6 +908,31 @@
         "modulationFlags": {
           "overModulation": false,
           "discontinuousPWM": false
+        }
+      },
+      "motor_0": {
+        "label": "",
+        "description": "",
+        "polePairs": "Number.NaN",
+        "mmsType": "",
+        "rs": "Number.NaN",
+        "ls": "Number.NaN",
+        "mmsLd_lq_ratio": "Number.NaN",
+        "maxCurrent": "Number.NaN",
+        "maxDCVoltage": "Number.NaN",
+        "BEmfConstant": "Number.NaN",
+        "inertia": "Number.NaN",
+        "friction": "Number.NaN",
+        "maxRatedSpeed": 6000,
+        "hasHallSensor": true,
+        "hallSensor": {
+          "sensorsDisplacement": "Number.NaN",
+          "placementElectricalAngle": "Number.NaN"
+        },
+        "hasQuadratureEncoder": true,
+        "quadratureEncoder": {
+          "pulsesPerMechanicalRevolution": "Number.NaN",
+          "hasIndexPin": true
         }
       }
     }

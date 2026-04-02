@@ -110,10 +110,10 @@
         <define key="M1_LOW_SIDE_IDLE_STATE" value="TURN_OFF" />
         <define key="M1_LOW_SIDE_SIGNALS_ENABLING" value="LS_PWM_TIMER" />
         <define key="M1_LS" value="0.00066" />
-        <define key="M1_MAX_APPLICATION_SPEED" value="4000" />
+        <define key="M1_MAX_APPLICATION_SPEED" value="6000" />
         <define key="M1_MAX_MODULATION_INDEX" value="96" />
         <define key="M1_MIN_APPLICATION_SPEED" value="0" />
-        <define key="M1_MOTOR_MAX_SPEED_RPM" value="4000" />
+        <define key="M1_MOTOR_MAX_SPEED_RPM" value="6000" />
         <define key="M1_MOTOR_NAME" value="42JSF840AS-1000-8" />
         <define key="M1_MOTOR_RATED_FLUX" value="0.036129974" />
         <define key="M1_MOTOR_VOLTAGE_CONSTANT" value="3.0" />
