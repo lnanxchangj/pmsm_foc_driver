@@ -314,7 +314,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>1</Optim>
+            <Optim>4</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
             <OneElfS>1</OneElfS>
@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>ARM_MATH_CM4,USE_HAL_DRIVER,STM32F407xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../MCSDK_v6.4.2-Full/MotorControl/MCSDK/MCLib/Any/Inc;../MCSDK_v6.4.2-Full/MotorControl/MCSDK/MCLib/F4xx/Inc;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;..\BSP</IncludePath>
+              <IncludePath>../Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../MCSDK_v6.4.2-Full/MotorControl/MCSDK/MCLib/Any/Inc;../MCSDK_v6.4.2-Full/MotorControl/MCSDK/MCLib/F4xx/Inc;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;../BSP;..\CANopen\CANopenNode;..\CANopen\CANopenNode_STM32</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1120,6 +1120,121 @@
               <FileName>bsp_can.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_can.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>CANopenNode</GroupName>
+          <Files>
+            <File>
+              <FileName>CANopen.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\CANopen.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_Emergency.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_Emergency.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_fifo.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_fifo.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_HBconsumer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_HBconsumer.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_NMT_Heartbeat.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_NMT_Heartbeat.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_Node_Guarding.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_Node_Guarding.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_ODinterface.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_ODinterface.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_PDO.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_PDO.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_SDOclient.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_SDOclient.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_SDOserver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_SDOserver.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_SYNC.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_SYNC.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_TIME.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\CO_TIME.c</FilePath>
+            </File>
+            <File>
+              <FileName>crc16-ccitt.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\301\crc16-ccitt.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_LEDs.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\303\CO_LEDs.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_LSSmaster.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\305\CO_LSSmaster.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_LSSslave.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\305\CO_LSSslave.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_storage.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode\storage\CO_storage.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>CANopenNode_STM32</GroupName>
+          <Files>
+            <File>
+              <FileName>CO_app_STM32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode_STM32\CO_app_STM32.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_driver_STM32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode_STM32\CO_driver_STM32.c</FilePath>
+            </File>
+            <File>
+              <FileName>CO_storageBlank.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode_STM32\CO_storageBlank.c</FilePath>
+            </File>
+            <File>
+              <FileName>OD.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode_STM32\OD.c</FilePath>
             </File>
           </Files>
         </Group>

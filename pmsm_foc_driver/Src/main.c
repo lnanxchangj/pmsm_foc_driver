@@ -102,6 +102,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_MotorControl_Init();
   MX_CAN1_Init();
+  MX_TIM14_Init();
 
   /* Initialize interrupts */
   MX_NVIC_Init();
@@ -124,7 +125,7 @@ int main(void)
 
   /* Send speed ramp command after position ctrl is disabled */
 
-//  MC_ProgramSpeedRampMotor1_F(5000, 1000);       /* 0 RPM, 1s ramp */
+	MC_ProgramSpeedRampMotor1_F(0, 10);       /* 0 RPM, 1s ramp */
 
   /* USER CODE END 2 */
 

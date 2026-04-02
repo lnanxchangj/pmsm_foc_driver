@@ -3,7 +3,13 @@
     "allow": [
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(cd:*)",
+      "Bash(cp D:/code/CanOpenSTM32/CANopenNode_STM32/CO_driver_STM32.c D:/code/pmsm_foc_driver/pmsm_foc_driver/CANopen/)",
+      "Bash(cp D:/code/CanOpenSTM32/CANopenNode_STM32/CO_driver_target.h D:/code/pmsm_foc_driver/pmsm_foc_driver/CANopen/)",
+      "Bash(cp D:/code/CanOpenSTM32/CANopenNode_STM32/CO_app_STM32.c D:/code/pmsm_foc_driver/pmsm_foc_driver/CANopen/)",
+      "Bash(cp D:/code/CanOpenSTM32/CANopenNode_STM32/CO_app_STM32.h D:/code/pmsm_foc_driver/pmsm_foc_driver/CANopen/)",
+      "Bash(cp D:/code/CanOpenSTM32/CANopenNode_STM32/OD.c D:/code/pmsm_foc_driver/pmsm_foc_driver/CANopen/)"
     ]
   }
 }
