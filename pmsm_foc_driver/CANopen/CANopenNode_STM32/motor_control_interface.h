@@ -17,6 +17,7 @@ void motor_set_target_velocity(int32_t vel);      /* 设置目标速度 (RPM) */
 void motor_set_target_position(int32_t pos);     /* 设置目标位置 (PPR) */
 void motor_set_target_torque(int16_t torque);    /* 设置目标力矩 (0.1%) */
 
+void motor_start(void);                          /* 启动电机 */
 void motor_stop(void);                          /* 正常停止 */
 void motor_emergency_stop(void);                 /* 紧急停止 */
 

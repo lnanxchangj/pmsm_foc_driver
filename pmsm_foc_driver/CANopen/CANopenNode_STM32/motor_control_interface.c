@@ -28,11 +28,20 @@ void motor_control_interface_init(void)
     MC_StopMotor1();
 }
 
+/* 启动电机 */
+void motor_start(void)
+{
+    MC_StartMotor1();
+}
+
 /* 设置目标速度 (RPM) */
 void motor_set_target_velocity(int32_t vel)
 {
     /* vel 单位是 RPM，MC_ProgramSpeedRampMotor1_F 使用 rpm */
     float_t speed_rpm = (float_t)vel;
+
+    /* 速度模式时禁用位置控制 */
+    pPosCtrl[M1]->PositionControlRegulation = false;
 
     /* 设置为目标速度，立即执行 (时间设为0) */
     MC_ProgramSpeedRampMotor1_F(speed_rpm, 0);
@@ -43,6 +52,9 @@ void motor_set_target_position(int32_t pos)
 {
     /* pos 单位是 PPR (编码器脉冲数) */
     float_t position_ppr = (float_t)pos;
+
+    /* ST SDK 需要启用位置控制才能执行位置命令 */
+    pPosCtrl[M1]->PositionControlRegulation = true;
 
     /* 设置位置命令，0ms表示立即执行 */
     MC_ProgramPositionCommandMotor1(position_ppr, 0);

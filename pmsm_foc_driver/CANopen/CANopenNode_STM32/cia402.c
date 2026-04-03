@@ -177,6 +177,7 @@ void cia402_process(void)
         case STATE_SWITCHED_ON:
             if (target_bits == 0x0F) {  /* Enable Operation: bit0&1&2&3=1 */
                 state = STATE_OPERATION_ENABLED;
+                motor_start();
             } else if (target_bits == 0x00) {  /* Disable Voltage */
                 state = STATE_SWITCH_ON_DISABLED;
             } else if ((target_bits & 0x07) == 0x06) {
