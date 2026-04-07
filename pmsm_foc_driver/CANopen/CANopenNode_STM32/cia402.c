@@ -1,7 +1,8 @@
 /*
  * CIA402.c - CANopen CIA 402 State Machine Implementation
  *
- * CiA 402运动控制协议的状态机实现
+ * 基于 cia402device 库的标准化实现
+ * 集成 ST Motor Control SDK 接口
  */
 
 #include "cia402.h"
@@ -9,303 +10,132 @@
 #include "OD.h"
 #include "mc_type.h"
 
-static CIA402_State_t state = STATE_SWITCH_ON_DISABLED;
+/* CIA402 状态机句柄 */
+static CIA402_Handle_t cia402;
 
-/* 故障标志 */
-static uint8_t fault_pending = 0;
-
-/* 模式切换标志: 正在切换到新模式时置1 */
-static uint8_t mode_switch_pending = 0;
-static int8_t target_mode = MODE_VELOCITY;
-static int8_t last_mode = MODE_VELOCITY;  /* 上一次执行的模式 */
+/* 当前运行模式 */
+static int8_t current_mode = MODE_NO_MODE;
 
 /*===========================================================================
- * 状态转移命令 (Controlword 0x6040)
- *===========================================================================
- * 状态转移图:
- *
- *   [Not Ready] --> [Switch On Disabled]
- *        |                    |
- *        v                    v
- *   [Ready to Switch On] <--+
- *        |                    |
- *        v                    |
- *   [Switched On] -------->--+
- *        |                    |
- *        v                    |
- *   [Operation Enabled] ----+
- *        |     |              |
- *        v     v              |
- *   [Quick Stop Active]      |
- *        |                   |
- *        +------------------>+
- *        |                   |
- *        v                   v
- *   [Fault] <-- [Fault Reaction Active]
- *        |
- *        v
- *   (Fault Reset) --> [Switch On Disabled]
+ * CIA402 初始化
  *===========================================================================*/
 
-/* 将 Controlword 位转换为控制命令 */
-static uint8_t controlword_to_target_state(uint16_t cw)
+void cia402_init(void)
 {
-    uint8_t bits = 0;
-    if (cw & CW_SWITCH_ON) bits |= 0x01;
-    if (cw & CW_ENABLE_VOLTAGE) bits |= 0x02;
-    if (cw & CW_QUICK_STOP) bits |= 0x04;
-    if (cw & CW_ENABLE_OPERATION) bits |= 0x08;
-    return bits;
+    /* 初始化 CIA402 轴 (使用标准库) */
+    cia402_initialize(&cia402.axis, &OD_RAM.x6041_statusword, NULL);
+
+    /* 清除任何残留故障 */
+    motor_clear_fault();
+
+    /* 初始化扩展字段 */
+    cia402.target_mode = MODE_VELOCITY;
+    cia402.last_mode = MODE_NO_MODE;
+    cia402.switch_target_value = 0;
+
+    /* 初始模式 */
+    current_mode = MODE_NO_MODE;
+
+    /* 初始状态字 - SWITCH_ON_DISABLED */
+    OD_RAM.x6041_statusword = SWITCH_ON_DISABLED;
 }
 
-/* 更新 Statusword */
-static void update_statusword(CIA402_State_t state)
+/*===========================================================================
+ * CIA402 主处理函数 (1ms周期调用)
+ *===========================================================================*/
+
+void cia402_process(void)
 {
-    uint16_t sw = 0;
+    uint16_t controlword = OD_RAM.x6040_controlword;
+    uint16_t statusword = 0;
 
-    /* 基本状态位 */
-    switch (state) {
-        case STATE_NOT_READY_TO_SWITCH_ON:
-            sw = 0x0000;
-            break;
+    /* 调用标准库状态机 */
+    cia402_state_machine(&cia402.axis, controlword);
 
-        case STATE_SWITCH_ON_DISABLED:
-            sw = SW_SWITCH_ON_DISABLED;
-            break;
+    /* 获取更新后的状态字 */
+    statusword = OD_RAM.x6041_statusword;
 
-        case STATE_READY_TO_SWITCH_ON:
-            sw = SW_READY_TO_SWITCH_ON | SW_SWITCH_ON_DISABLED;
-            break;
+    /* 根据状态机标志执行相应动作 */
+    if (cia402.axis.flags.axis_func_enabled) {
+        /* 运行使能 - 执行运动控制 */
+        switch (current_mode) {
+            case MODE_VELOCITY:
+            case MODE_PROFILE_VELOCITY:
+                /* 速度模式 */
+                motor_set_target_velocity(OD_RAM.x60FF_targetVelocity);
+                break;
 
-        case STATE_SWITCHED_ON:
-            sw = SW_READY_TO_SWITCH_ON | SW_SWITCHED_ON | SW_SWITCH_ON_DISABLED | SW_VOLTAGE_ENABLED;
-            break;
+            case MODE_PROFILE_POSITION:
+                /* 轮廓位置模式 */
+                motor_set_target_position(OD_RAM.x607A_targetPosition);
+                break;
 
-        case STATE_OPERATION_ENABLED:
-            sw = SW_READY_TO_SWITCH_ON | SW_SWITCHED_ON | SW_OPERATION_ENABLED
-               | SW_VOLTAGE_ENABLED | SW_SWITCH_ON_DISABLED;
-            break;
+            case MODE_TORQUE:
+                /* 力矩模式 */
+                motor_set_target_torque(OD_RAM.x6071_targetTorque);
+                break;
 
-        case STATE_QUICK_STOP_ACTIVE:
-            sw = SW_READY_TO_SWITCH_ON | SW_SWITCHED_ON | SW_OPERATION_ENABLED
-               | SW_VOLTAGE_ENABLED | SW_QUICK_STOP | SW_SWITCH_ON_DISABLED;
-            break;
-
-        case STATE_FAULT_REACTION_ACTIVE:
-            sw = SW_READY_TO_SWITCH_ON | SW_SWITCHED_ON | SW_OPERATION_ENABLED
-               | SW_VOLTAGE_ENABLED | SW_SWITCH_ON_DISABLED | SW_FAULT;
-            break;
-
-        case STATE_FAULT:
-            sw = SW_FAULT | SW_SWITCH_ON_DISABLED;
-            break;
+            default:
+                break;
+        }
     }
 
-    OD_RAM.x6041_statusword = sw;
+    /* 检测模式切换请求 */
+    if (OD_RAM.x6060_modesOfOperation != current_mode &&
+        cia402.axis.state == OPERATION_ENABLED) {
+        /* 模式发生变化且处于运行状态 - 需要安全切换 */
+        int8_t new_mode = OD_RAM.x6060_modesOfOperation;
+
+        if (motor_is_stopped()) {
+            /* 电机已停止，直接切换 */
+            current_mode = new_mode;
+        } else {
+            /* 电机还在转，先停止 */
+            cia402.target_mode = new_mode;
+            cia402.switch_target_value = (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
+                                         ? OD_RAM.x60FF_targetVelocity
+                                         : OD_RAM.x607A_targetPosition;
+            motor_stop();
+        }
+    }
+
+    /* 检查停止后的模式切换 */
+    if (motor_is_stopped() && cia402.target_mode != 0 &&
+        cia402.axis.state == OPERATION_ENABLED) {
+        current_mode = cia402.target_mode;
+        cia402.target_mode = 0;
+
+        /* 根据新模式配置电机 */
+        if (current_mode == MODE_VELOCITY || current_mode == MODE_PROFILE_VELOCITY) {
+            motor_safe_switch_to_velocity(cia402.switch_target_value);
+        } else if (current_mode == MODE_PROFILE_POSITION) {
+            motor_safe_switch_to_position(cia402.switch_target_value);
+        }
+    }
+
+    /* 故障检测 - 使用标准方式 */
+    if (motor_has_fault() && cia402.axis.state != FAULT) {
+        /* 触发故障转移 */
+        cia402.axis.state = FAULT_REACTION_ACTIVE;
+    }
+
+    /* 更新反馈值 */
+    OD_RAM.x6061_modesOfOperationDisplay = current_mode;
+    OD_RAM.x6064_positionActualValue = motor_get_position();
+    OD_RAM.x606C_velocityActualValue = motor_get_velocity();
+    OD_RAM.x6077_torqueActualValue = motor_get_torque();
 }
 
 /*===========================================================================
  * 公共接口函数
  *===========================================================================*/
 
-void cia402_init(void)
-{
-    /* 先清除任何残留故障 */
-    motor_clear_fault();
-
-    state = STATE_SWITCH_ON_DISABLED;
-    fault_pending = 0;
-
-    /* 初始状态字 */
-    OD_RAM.x6041_statusword = SW_SWITCH_ON_DISABLED;
-
-    /* 默认模式 */
-    OD_RAM.x6060_modesOfOperation = MODE_VELOCITY;  /* 速度模式 */
-}
-
 CIA402_State_t cia402_get_state(void)
 {
-    return state;
+    return cia402.axis.state;
 }
 
-void cia402_process(void)
+int8_t cia402_get_mode(void)
 {
-    uint16_t cw = OD_RAM.x6040_controlword;
-    uint8_t target_bits = controlword_to_target_state(cw);
-
-    /* ==== 模式切换检测 ==== */
-    /* 只有在运行状态下才处理模式切换 */
-    if (state == STATE_OPERATION_ENABLED && !mode_switch_pending) {
-        if (OD_RAM.x6060_modesOfOperation != last_mode) {
-            /* 模式发生了变化，需要安全切换 */
-            if (motor_is_stopped()) {
-                /* 电机已停止，直接切换 */
-                if (OD_RAM.x6060_modesOfOperation == MODE_VELOCITY ||
-                    OD_RAM.x6060_modesOfOperation == MODE_PROFILE_VELOCITY) {
-                    pPosCtrl[M1]->PositionControlRegulation = false;
-                    STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
-                } else if (OD_RAM.x6060_modesOfOperation == MODE_PROFILE_POSITION) {
-                    pPosCtrl[M1]->PositionControlRegulation = true;
-                    STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
-                }
-                last_mode = OD_RAM.x6060_modesOfOperation;
-            } else {
-                /* 电机还在转，先停下 */
-                mode_switch_pending = 1;
-                target_mode = OD_RAM.x6060_modesOfOperation;
-                motor_stop();
-            }
-        }
-    }
-
-    /* 故障检测 - 临时禁用以便调试
-    if (motor_has_fault() && state != STATE_FAULT && state != STATE_FAULT_REACTION_ACTIVE) {
-        state = STATE_FAULT_REACTION_ACTIVE;
-        motor_emergency_stop();
-    }
-    */
-
-    /* 故障恢复 */
-    if (state == STATE_FAULT) {
-        if (cw & CW_FAULT_RESET) {
-            state = STATE_SWITCH_ON_DISABLED;
-            motor_clear_fault();
-            fault_pending = 0;
-        }
-        update_statusword(state);
-        return;
-    }
-
-    /* 故障反应状态 - 等待故障处理完成 */
-    if (state == STATE_FAULT_REACTION_ACTIVE) {
-        state = STATE_FAULT;
-        update_statusword(state);
-        return;
-    }
-
-    /* 正常状态转移 */
-    switch (state) {
-        /*-------- 初始状态 --------*/
-        case STATE_NOT_READY_TO_SWITCH_ON:
-            /* 等待初始化完成 -> 自动转移到 Switch On Disabled */
-            state = STATE_SWITCH_ON_DISABLED;
-            break;
-
-        /*-------- 关机禁止 --------*/
-        case STATE_SWITCH_ON_DISABLED:
-            if (target_bits == 0x06) {  /* Shutdown: bit1&2=1, bit0=0 */
-                state = STATE_READY_TO_SWITCH_ON;
-            }
-            break;
-
-        /*-------- 准备就绪 --------*/
-        case STATE_READY_TO_SWITCH_ON:
-            if (target_bits == 0x07) {  /* Switch On: bit0&1&2=1 */
-                state = STATE_SWITCHED_ON;
-            } else if (target_bits != 0x06) {
-                /* 收到非法命令 -> 回到初始状态 */
-                state = STATE_SWITCH_ON_DISABLED;
-            }
-            break;
-
-        /*-------- 已通电 --------*/
-        case STATE_SWITCHED_ON:
-            if (target_bits == 0x0F) {  /* Enable Operation: bit0&1&2&3=1 */
-                state = STATE_OPERATION_ENABLED;
-                motor_start();
-            } else if (target_bits == 0x00) {  /* Disable Voltage */
-                state = STATE_SWITCH_ON_DISABLED;
-            } else if ((target_bits & 0x07) == 0x06) {
-                /* 收到 Shutdown -> 回到 Ready */
-                state = STATE_READY_TO_SWITCH_ON;
-            }
-            break;
-
-        /*-------- 运行使能 --------*/
-        case STATE_OPERATION_ENABLED:
-            if (target_bits == 0x07) {  /* Disable Operation */
-                state = STATE_SWITCHED_ON;
-                motor_stop();
-                mode_switch_pending = 0;  /* 取消待处理的切换 */
-            } else if (target_bits == 0x00) {  /* Disable Voltage */
-                state = STATE_SWITCH_ON_DISABLED;
-                motor_stop();
-                mode_switch_pending = 0;
-            } else if (!(cw & CW_QUICK_STOP)) {  /* Quick Stop 激活 */
-                state = STATE_QUICK_STOP_ACTIVE;
-                mode_switch_pending = 0;
-            } else if (target_bits == 0x06) {  /* Shutdown */
-                state = STATE_READY_TO_SWITCH_ON;
-                motor_stop();
-                mode_switch_pending = 0;
-            } else {
-                /* ==== 检查模式切换 ==== */
-                if (mode_switch_pending) {
-                    /* 正在等待停止后切换 */
-                    if (motor_is_stopped()) {
-                        /* 电机已停止，完成模式切换 */
-                        mode_switch_pending = 0;
-
-                        if (target_mode == MODE_VELOCITY || target_mode == MODE_PROFILE_VELOCITY) {
-                            /* 切换到速度模式 */
-                            pPosCtrl[M1]->PositionControlRegulation = false;
-                            STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
-                            OD_RAM.x6060_modesOfOperation = target_mode;
-                        } else if (target_mode == MODE_PROFILE_POSITION) {
-                            /* 切换到位置模式 */
-                            pPosCtrl[M1]->PositionControlRegulation = true;
-                            STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
-                            OD_RAM.x6060_modesOfOperation = target_mode;
-                        }
-                        last_mode = target_mode;  /* 更新最后模式 */
-                    }
-                    /* 如果没停止，什么都不做，等待 */
-                }
-
-                /* ==== 执行运动控制 ==== */
-                switch (OD_RAM.x6060_modesOfOperation) {
-                    case MODE_VELOCITY:      /* 速度模式 (CSV) */
-                    case MODE_PROFILE_VELOCITY:  /* 轮廓速度模式 (PV) */
-                        motor_set_target_velocity(OD_RAM.x60FF_targetVelocity);
-                        break;
-
-                    case MODE_PROFILE_POSITION: /* 轮廓位置模式 (PP) */
-                        motor_set_target_position(OD_RAM.x607A_targetPosition);
-                        break;
-
-                    case MODE_TORQUE:          /* 力矩模式 (TC) */
-                        motor_set_target_torque(OD_RAM.x6071_targetTorque);
-                        break;
-
-                    default:
-                        /* 未知模式，不输出 */
-                        break;
-                }
-            }
-            break;
-
-        /*-------- 快速停止 --------*/
-        case STATE_QUICK_STOP_ACTIVE:
-            motor_emergency_stop();
-            if (target_bits == 0x00) {  /* Disable Voltage -> 回到初始 */
-                state = STATE_SWITCH_ON_DISABLED;
-            } else if (cw & CW_QUICK_STOP) {
-                /* Quick Stop 取消 -> 回到 Operation Enabled */
-                state = STATE_OPERATION_ENABLED;
-            }
-            break;
-
-        default:
-            state = STATE_SWITCH_ON_DISABLED;
-            break;
-    }
-
-    /* 更新状态字 */
-    update_statusword(state);
-
-    /* 更新反馈值 */
-    OD_RAM.x6061_modesOfOperationDisplay = OD_RAM.x6060_modesOfOperation;
-    OD_RAM.x6064_positionActualValue = motor_get_position();
-    OD_RAM.x606C_velocityActualValue = motor_get_velocity();
-    OD_RAM.x6077_torqueActualValue = motor_get_torque();
+    return current_mode;
 }
