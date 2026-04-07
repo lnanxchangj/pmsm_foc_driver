@@ -113,12 +113,6 @@ canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
     /* Initialize CIA402 state machine - motor control is initialized via MX_MotorControl_Init() in main.c */
     cia402_init();
 
-    /* Debug: Print OD values after init */
-    extern OD_RAM_t OD_RAM;
-    log_printf("OD Init: controlword=0x%04X, statusword=0x%04X, mode=%d, modeDisplay=%d\n",
-               OD_RAM.x6040_controlword, OD_RAM.x6041_statusword,
-               OD_RAM.x6060_modesOfOperation, OD_RAM.x6061_modesOfOperationDisplay);
-
     return 0;
 }
 
@@ -225,17 +219,6 @@ canopen_app_process() {
 
         /* CIA402 state machine processing */
         cia402_process();
-
-        /* Debug: Print OD values every 500ms */
-        static uint32_t debug_time_old = 0;
-        if (time_current - debug_time_old > 500) {
-            extern OD_RAM_t OD_RAM;
-            CIA402_State_t state = cia402_get_state();
-            log_printf("[OD] CW=0x%04X SW=0x%04X mode=%d state=0x%02X\n",
-                       OD_RAM.x6040_controlword, OD_RAM.x6041_statusword,
-                       OD_RAM.x6060_modesOfOperation, state);
-            debug_time_old = time_current;
-        }
 
         canopenNodeSTM32->outStatusLEDRed = CO_LED_RED(CO->LEDs, CO_LED_CANopen);
         canopenNodeSTM32->outStatusLEDGreen = CO_LED_GREEN(CO->LEDs, CO_LED_CANopen);

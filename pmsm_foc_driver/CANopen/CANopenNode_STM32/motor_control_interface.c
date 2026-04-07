@@ -12,7 +12,7 @@
 #include "mc_config.h"
 #include "mc_interface.h"
 #include "trajectory_ctrl.h"
-
+#include <stdio.h>
 /*
  * MCP标准方式说明：
  *
@@ -44,10 +44,21 @@
  * CIA402 需要的电机控制函数实现
  *===========================================================================*/
 
-/* 启动电机 */
+/* 启动电机 - 完整的ST SDK标准启动流程
+ * 注意：这个函数只负责启动电机，不设置控制模式
+ * 控制模式应该在调用此函数之前由motor_switch_to_xxx_mode设置好
+ */
 void motor_start(void)
 {
+    printf("[MTR] motor_start called\r\n");
+
     MC_StartMotor1();
+
+    /* 等待alignment完成 */
+    while (MC_GetAlignmentStatusMotor1() != TC_ALIGNMENT_COMPLETED)
+        ;
+
+    printf("[MTR] motor_start: alignment done\r\n");
 }
 
 /* 停止电机 - 正常减速停止 */
@@ -222,6 +233,7 @@ AlignStatus_t motor_get_alignment_status(void)
  */
 void motor_switch_to_velocity_mode(int32_t target_vel)
 {
+    printf("[VEL] switch_to_velocity_mode: target=%ld\r\n", target_vel);
     /* 速度命令会自动切换到速度模式（由MCI_ExecBufferedCommands处理） */
     MC_ProgramSpeedRampMotor1_F((float_t)target_vel, 0);
 }
@@ -246,6 +258,7 @@ void motor_switch_to_torque_mode(int32_t target_torque)
 void motor_switch_to_position_mode(int32_t target_pos)
 {
     /* 位置命令会自动启用位置控制（由TC_MoveCommand处理） */
+    printf("[POS] switch_to_position_mode: target=%ld\r\n", target_pos);
     MC_ProgramPositionCommandMotor1((float_t)target_pos, 0.0f);
 }
 

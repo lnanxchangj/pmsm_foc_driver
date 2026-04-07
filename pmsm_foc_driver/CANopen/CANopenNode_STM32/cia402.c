@@ -50,10 +50,6 @@ void cia402_init(void)
 
     /* 初始状态 - 与状态机一致 */
     last_state = cia402.axis.state;
-
-    /* Debug: 打印初始化后的状态 */
-    printf("[CIA402] Init: state=0x%02X, SW=0x%04X, AL_status=0x%04X\r\n",
-           cia402.axis.state, OD_RAM.x6041_statusword, AL_status);
 }
 
 /*===========================================================================
@@ -66,13 +62,6 @@ void cia402_process(void)
     uint16_t statusword = 0;
     CIA402_State_t new_state;
 
-    /* Debug: 打印每次调用时收到的controlword */
-    static uint16_t last_cw = 0xFFFF;
-    if (controlword != last_cw) {
-        printf("[CIA402] CW: 0x%04X\r\n", controlword);
-        last_cw = controlword;
-    }
-
     /* 调用标准库状态机 */
     cia402_state_machine(&cia402.axis, controlword);
 
@@ -81,108 +70,189 @@ void cia402_process(void)
     new_state = cia402.axis.state;
 
     /* 检测状态变化 */
-    if (new_state != last_state) {
+    if (new_state != last_state)
+    {
         /* 状态变化处理 */
-        switch (new_state) {
-            case OPERATION_ENABLED:
-                /* 进入运行状态 - 启动电机 */
-                if (last_state == SWITCHED_ON || last_state == READY_TO_SWITCH_ON) {
+        switch (new_state)
+        {
+        case OPERATION_ENABLED:
+            printf("[CIA402] State: OPERATION_ENABLED (last=%d, target_mode=%d, stopped=%d)\r\n",
+                   last_state, cia402.target_mode, motor_is_stopped());
+            /* 进入运行状态 - 启动电机
+             * 如果有待处理的模式切换，先处理模式切换
+             */
+            if (cia402.target_mode != MODE_NO_MODE && motor_is_stopped())
+            {
+                /* 有待处理的模式切换，先执行切换
+                 * 注意：motor_switch_to_position_mode已经设置了控制模式，不需要再motor_start()
+                 */
+                printf("[CIA402] Executing pending switch to %d\r\n", cia402.target_mode);
+                printf("[CIA402] OD_RAM.x607A_targetPosition = %ld\r\n", OD_RAM.x607A_targetPosition);
+                printf("[CIA402] OD_RAM.x60FF_targetVelocity = %ld\r\n", OD_RAM.x60FF_targetVelocity);
+                current_mode = cia402.target_mode;
+                cia402.target_mode = MODE_NO_MODE;
+
+                if (current_mode == MODE_VELOCITY || current_mode == MODE_PROFILE_VELOCITY)
+                {
+                    motor_switch_to_velocity_mode(OD_RAM.x60FF_targetVelocity);
                     motor_start();
                 }
-                break;
-
-            case SWITCH_ON_DISABLED:
-            case READY_TO_SWITCH_ON:
-            case SWITCHED_ON:
-                /* 进入非运行状态 - 确保电机停止 */
-                if (last_state == OPERATION_ENABLED) {
-                    motor_stop();
+                else if (current_mode == MODE_PROFILE_POSITION)
+                {
+                    /* 执行时读取当前OD中的目标位置，而不是之前保存的值 */
+                    printf("[CIA402] Using current OD target pos: %ld\r\n", OD_RAM.x607A_targetPosition);
+                    motor_switch_to_position_mode(OD_RAM.x607A_targetPosition);
+                    /* 位置模式不需要调用motor_start()，已经在上面设置好了 */
                 }
-                break;
+                else if (current_mode == MODE_TORQUE)
+                {
+                    motor_switch_to_torque_mode(OD_RAM.x6071_targetTorque);
+                    motor_start();
+                }
+            }
+            else if (last_state == SWITCHED_ON || last_state == READY_TO_SWITCH_ON)
+            {
+                printf("[CIA402] Normal start\r\n");
+                motor_start();
+            }
+            break;
 
-            case FAULT:
-                /* 进入故障状态 - 紧急停止 */
-                motor_emergency_stop();
-                break;
+        case SWITCH_ON_DISABLED:
+        case READY_TO_SWITCH_ON:
+        case SWITCHED_ON:
+            /* 进入非运行状态 - 确保电机停止 */
+            if (last_state == OPERATION_ENABLED)
+            {
+                motor_stop();
+            }
+            break;
 
-            default:
-                break;
+        case FAULT:
+            /* 进入故障状态 - 紧急停止 */
+            motor_emergency_stop();
+            break;
+
+        default:
+            break;
         }
         last_state = new_state;
     }
 
     /* 故障检测 - 实时检查 */
-    if (motor_has_fault() && new_state != FAULT && new_state != FAULT_REACTION_ACTIVE) {
+    if (motor_has_fault() && new_state != FAULT && new_state != FAULT_REACTION_ACTIVE)
+    {
         /* 触发故障转移 */
         cia402.axis.state = FAULT_REACTION_ACTIVE;
         motor_emergency_stop();
     }
 
     /* 根据状态机标志执行相应动作 */
-    if (cia402.axis.flags.axis_func_enabled) {
+    if (cia402.axis.flags.axis_func_enabled)
+    {
         /* 运行使能 - 执行运动控制 */
-        switch (current_mode) {
-            case MODE_VELOCITY:
-            case MODE_PROFILE_VELOCITY:
-                /* 速度模式 */
-                motor_set_target_velocity(OD_RAM.x60FF_targetVelocity);
-                break;
+        switch (current_mode)
+        {
+        case MODE_VELOCITY:
+        case MODE_PROFILE_VELOCITY:
+            /* 速度模式 - 每次调用都设置速度（确保SDO写入的值被传递） */
+            motor_set_target_velocity(OD_RAM.x60FF_targetVelocity);
+            break;
 
-            case MODE_PROFILE_POSITION:
-                /* 轮廓位置模式 */
-                motor_set_target_position(OD_RAM.x607A_targetPosition);
-                break;
+        case MODE_PROFILE_POSITION:
+            /* 轮廓位置模式 */
+            motor_set_target_position(OD_RAM.x607A_targetPosition);
+            break;
 
-            case MODE_TORQUE:
-                /* 力矩模式 */
-                motor_set_target_torque(OD_RAM.x6071_targetTorque);
-                break;
+        case MODE_TORQUE:
+            /* 力矩模式 */
+            motor_set_target_torque(OD_RAM.x6071_targetTorque);
+            break;
 
-            default:
-                /* 未设置模式时默认速度模式 */
-                if (OD_RAM.x6060_modesOfOperation != MODE_NO_MODE) {
-                    current_mode = OD_RAM.x6060_modesOfOperation;
-                }
-                break;
+        default:
+            /* 未设置模式时默认速度模式 */
+            if (OD_RAM.x6060_modesOfOperation != MODE_NO_MODE)
+            {
+                current_mode = OD_RAM.x6060_modesOfOperation;
+            }
+            break;
         }
     }
 
     /* 检测模式切换请求 */
     if (OD_RAM.x6060_modesOfOperation != current_mode &&
-        new_state == OPERATION_ENABLED) {
+        new_state == OPERATION_ENABLED)
+    {
         /* 模式发生变化且处于运行状态 - 需要安全切换 */
         int8_t new_mode = OD_RAM.x6060_modesOfOperation;
+        printf("[CIA402] Mode change req: %d -> %d, stopped=%d\r\n",
+               current_mode, new_mode, motor_is_stopped());
 
-        if (motor_is_stopped()) {
+        if (motor_is_stopped())
+        {
             /* 电机已停止，直接切换 */
             current_mode = new_mode;
-        } else {
+            printf("[CIA402] Mode direct switch to %d\r\n", new_mode);
+
+            /* 根据新模式配置电机 */
+            if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
+            {
+                motor_switch_to_velocity_mode(OD_RAM.x60FF_targetVelocity);
+                motor_start();
+            }
+            else if (new_mode == MODE_PROFILE_POSITION)
+            {
+                motor_switch_to_position_mode(OD_RAM.x607A_targetPosition);
+                /* 位置模式不需要motor_start()，已在上面设置好 */
+            }
+            else if (new_mode == MODE_TORQUE)
+            {
+                motor_switch_to_torque_mode(OD_RAM.x6071_targetTorque);
+                motor_start();
+            }
+        }
+        else
+        {
             /* 电机还在转，先停止 */
             cia402.target_mode = new_mode;
             /* 根据模式存储目标值 */
-            if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY) {
+            if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
+            {
                 cia402.switch_target_value = OD_RAM.x60FF_targetVelocity;
-            } else if (new_mode == MODE_PROFILE_POSITION) {
+                printf("[CIA402] Store vel target: %ld\r\n", cia402.switch_target_value);
+            }
+            else if (new_mode == MODE_PROFILE_POSITION)
+            {
                 cia402.switch_target_value = OD_RAM.x607A_targetPosition;
-            } else if (new_mode == MODE_TORQUE) {
+                printf("[CIA402] Store pos target: %ld\r\n", cia402.switch_target_value);
+            }
+            else if (new_mode == MODE_TORQUE)
+            {
                 cia402.switch_target_value = OD_RAM.x6071_targetTorque;
             }
             motor_stop();
+            printf("[CIA402] Motor stop called, waiting...\r\n");
         }
     }
 
     /* 检查停止后的模式切换 */
     if (motor_is_stopped() && cia402.target_mode != MODE_NO_MODE &&
-        new_state == OPERATION_ENABLED) {
+        new_state == OPERATION_ENABLED)
+    {
+        printf("[CIA402] Executing pending mode switch: %d\r\n", cia402.target_mode);
         current_mode = cia402.target_mode;
         cia402.target_mode = MODE_NO_MODE;
 
         /* 根据新模式配置电机 */
-        if (current_mode == MODE_VELOCITY || current_mode == MODE_PROFILE_VELOCITY) {
+        if (current_mode == MODE_VELOCITY || current_mode == MODE_PROFILE_VELOCITY)
+        {
             motor_switch_to_velocity_mode(cia402.switch_target_value);
-        } else if (current_mode == MODE_PROFILE_POSITION) {
+        }
+        else if (current_mode == MODE_PROFILE_POSITION)
+        {
             motor_switch_to_position_mode(cia402.switch_target_value);
-        } else if (current_mode == MODE_TORQUE) {
+        }
+        else if (current_mode == MODE_TORQUE)
+        {
             motor_switch_to_torque_mode(cia402.switch_target_value);
         }
     }
