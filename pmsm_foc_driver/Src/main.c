@@ -117,9 +117,6 @@ int main(void)
   canOpenNodeSTM32.baudrate = 500;       /* 500Kbps */
   canopen_app_init(&canOpenNodeSTM32);
 
-  MC_StopMotor1();
-  HAL_Delay(100);
-
 //  MC_StartMotor1();
 
   /* Wait for alignment to complete */
@@ -144,10 +141,6 @@ int main(void)
   {
     /* CANopen process - call regularly */
     canopen_app_process();
-
-    /* Read current speed (RPM) */
-    speed = MC_GetMecSpeedAverageMotor1();
-    (void)speed;
     HAL_Delay(1);
     /* USER CODE END WHILE */
 
