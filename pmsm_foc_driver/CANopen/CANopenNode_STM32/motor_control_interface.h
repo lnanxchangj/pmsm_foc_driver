@@ -28,4 +28,9 @@ int16_t motor_get_torque(void);                 /* 获取当前力矩 (0.1%) */
 uint8_t motor_has_fault(void);                  /* 检查故障 */
 void motor_clear_fault(void);                    /* 清除故障 */
 
+/* 模式切换相关 */
+uint8_t motor_is_stopped(void);                  /* 检查电机是否已停止 */
+void motor_safe_switch_to_velocity(int32_t target_vel);   /* 安全切换到速度模式 */
+void motor_safe_switch_to_position(int32_t target_pos);  /* 安全切换到位置模式 */
+
 #endif /* MOTOR_CONTROL_INTERFACE_H */

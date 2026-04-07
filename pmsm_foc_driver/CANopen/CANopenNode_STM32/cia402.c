@@ -7,11 +7,17 @@
 #include "cia402.h"
 #include "motor_control_interface.h"
 #include "OD.h"
+#include "mc_type.h"
 
 static CIA402_State_t state = STATE_SWITCH_ON_DISABLED;
 
 /* 故障标志 */
 static uint8_t fault_pending = 0;
+
+/* 模式切换标志: 正在切换到新模式时置1 */
+static uint8_t mode_switch_pending = 0;
+static int8_t target_mode = MODE_VELOCITY;
+static int8_t last_mode = MODE_VELOCITY;  /* 上一次执行的模式 */
 
 /*===========================================================================
  * 状态转移命令 (Controlword 0x6040)
@@ -104,6 +110,9 @@ static void update_statusword(CIA402_State_t state)
 
 void cia402_init(void)
 {
+    /* 先清除任何残留故障 */
+    motor_clear_fault();
+
     state = STATE_SWITCH_ON_DISABLED;
     fault_pending = 0;
 
@@ -124,11 +133,37 @@ void cia402_process(void)
     uint16_t cw = OD_RAM.x6040_controlword;
     uint8_t target_bits = controlword_to_target_state(cw);
 
-    /* 故障检测 */
+    /* ==== 模式切换检测 ==== */
+    /* 只有在运行状态下才处理模式切换 */
+    if (state == STATE_OPERATION_ENABLED && !mode_switch_pending) {
+        if (OD_RAM.x6060_modesOfOperation != last_mode) {
+            /* 模式发生了变化，需要安全切换 */
+            if (motor_is_stopped()) {
+                /* 电机已停止，直接切换 */
+                if (OD_RAM.x6060_modesOfOperation == MODE_VELOCITY ||
+                    OD_RAM.x6060_modesOfOperation == MODE_PROFILE_VELOCITY) {
+                    pPosCtrl[M1]->PositionControlRegulation = false;
+                    STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+                } else if (OD_RAM.x6060_modesOfOperation == MODE_PROFILE_POSITION) {
+                    pPosCtrl[M1]->PositionControlRegulation = true;
+                    STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
+                }
+                last_mode = OD_RAM.x6060_modesOfOperation;
+            } else {
+                /* 电机还在转，先停下 */
+                mode_switch_pending = 1;
+                target_mode = OD_RAM.x6060_modesOfOperation;
+                motor_stop();
+            }
+        }
+    }
+
+    /* 故障检测 - 临时禁用以便调试
     if (motor_has_fault() && state != STATE_FAULT && state != STATE_FAULT_REACTION_ACTIVE) {
         state = STATE_FAULT_REACTION_ACTIVE;
         motor_emergency_stop();
     }
+    */
 
     /* 故障恢复 */
     if (state == STATE_FAULT) {
@@ -191,15 +226,42 @@ void cia402_process(void)
             if (target_bits == 0x07) {  /* Disable Operation */
                 state = STATE_SWITCHED_ON;
                 motor_stop();
+                mode_switch_pending = 0;  /* 取消待处理的切换 */
             } else if (target_bits == 0x00) {  /* Disable Voltage */
                 state = STATE_SWITCH_ON_DISABLED;
                 motor_stop();
+                mode_switch_pending = 0;
             } else if (!(cw & CW_QUICK_STOP)) {  /* Quick Stop 激活 */
                 state = STATE_QUICK_STOP_ACTIVE;
+                mode_switch_pending = 0;
             } else if (target_bits == 0x06) {  /* Shutdown */
                 state = STATE_READY_TO_SWITCH_ON;
                 motor_stop();
+                mode_switch_pending = 0;
             } else {
+                /* ==== 检查模式切换 ==== */
+                if (mode_switch_pending) {
+                    /* 正在等待停止后切换 */
+                    if (motor_is_stopped()) {
+                        /* 电机已停止，完成模式切换 */
+                        mode_switch_pending = 0;
+
+                        if (target_mode == MODE_VELOCITY || target_mode == MODE_PROFILE_VELOCITY) {
+                            /* 切换到速度模式 */
+                            pPosCtrl[M1]->PositionControlRegulation = false;
+                            STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+                            OD_RAM.x6060_modesOfOperation = target_mode;
+                        } else if (target_mode == MODE_PROFILE_POSITION) {
+                            /* 切换到位置模式 */
+                            pPosCtrl[M1]->PositionControlRegulation = true;
+                            STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
+                            OD_RAM.x6060_modesOfOperation = target_mode;
+                        }
+                        last_mode = target_mode;  /* 更新最后模式 */
+                    }
+                    /* 如果没停止，什么都不做，等待 */
+                }
+
                 /* ==== 执行运动控制 ==== */
                 switch (OD_RAM.x6060_modesOfOperation) {
                     case MODE_VELOCITY:      /* 速度模式 (CSV) */

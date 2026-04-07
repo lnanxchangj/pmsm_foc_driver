@@ -18,6 +18,19 @@
 #define PPR_TO_INT32(ppr) ((int32_t)(ppr))
 #define INT32_TO_PPR(val) ((int32_t)(val))
 
+/* 速度阈值判断 (RPM)，低于此值认为已停止 */
+#define STOPPED_SPEED_THRESHOLD_RPM  5
+
+/* 模式切换状态机 */
+typedef enum {
+    SWITCH_IDLE,           /* 空闲，无切换进行中 */
+    SWITCH_TO_VELOCITY,    /* 正在切换到速度模式 */
+    SWITCH_TO_POSITION     /* 正在切换到位置模式 */
+} Motor_SwitchState_t;
+
+static Motor_SwitchState_t switch_state = SWITCH_IDLE;
+static int32_t switch_target_value = 0;
+
 /*===========================================================================
  * CIA402 需要的电机控制函数实现
  *===========================================================================*/
@@ -121,4 +134,94 @@ uint8_t motor_has_fault(void)
 void motor_clear_fault(void)
 {
     MC_AcknowledgeFaultMotor1();
+}
+
+/*===========================================================================
+ * 安全模式切换函数
+ *===========================================================================*/
+
+/* 检查电机是否已停止 */
+uint8_t motor_is_stopped(void)
+{
+    int32_t speed = motor_get_velocity();
+    return (speed < STOPPED_SPEED_THRESHOLD_RPM && speed > -STOPPED_SPEED_THRESHOLD_RPM) ? 1 : 0;
+}
+
+/* 安全切换到速度模式 - 先停止再切换 */
+void motor_safe_switch_to_velocity(int32_t target_vel)
+{
+    if (switch_state != SWITCH_IDLE) {
+        /* 切换已在进行中，忽略新请求 */
+        return;
+    }
+
+    if (motor_is_stopped()) {
+        /* 已经停止，直接切换 */
+        pPosCtrl[M1]->PositionControlRegulation = false;
+        STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+
+        /* 设置新目标速度 */
+        MC_ProgramSpeedRampMotor1_F((float_t)target_vel, 0);
+    } else {
+        /* 需要先停止 */
+        switch_state = SWITCH_TO_VELOCITY;
+        switch_target_value = target_vel;
+        motor_stop();
+    }
+}
+
+/* 安全切换到位置模式 - 先停止再切换 */
+void motor_safe_switch_to_position(int32_t target_pos)
+{
+    if (switch_state != SWITCH_IDLE) {
+        /* 切换已在进行中，忽略新请求 */
+        return;
+    }
+
+    if (motor_is_stopped()) {
+        /* 已经停止，直接切换 */
+        pPosCtrl[M1]->PositionControlRegulation = true;
+        STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
+
+        /* 设置新目标位置 */
+        MC_ProgramPositionCommandMotor1((float_t)target_pos, 0);
+    } else {
+        /* 需要先停止 */
+        switch_state = SWITCH_TO_POSITION;
+        switch_target_value = target_pos;
+        motor_stop();
+    }
+}
+
+/* 模式切换状态机处理 - 需要在1ms周期调用 */
+void motor_switch_process(void)
+{
+    if (switch_state == SWITCH_IDLE) {
+        return;
+    }
+
+    /* 检查是否已停止 */
+    if (!motor_is_stopped()) {
+        return;
+    }
+
+    /* 已停止，完成切换 */
+    switch (switch_state) {
+        case SWITCH_TO_VELOCITY:
+            pPosCtrl[M1]->PositionControlRegulation = false;
+            STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+            MC_ProgramSpeedRampMotor1_F((float_t)switch_target_value, 0);
+            break;
+
+        case SWITCH_TO_POSITION:
+            pPosCtrl[M1]->PositionControlRegulation = true;
+            STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
+            MC_ProgramPositionCommandMotor1((float_t)switch_target_value, 0);
+            break;
+
+        default:
+            break;
+    }
+
+    switch_state = SWITCH_IDLE;
 }
