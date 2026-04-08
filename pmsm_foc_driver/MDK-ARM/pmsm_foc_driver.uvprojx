@@ -1242,14 +1242,14 @@
               <FilePath>..\CANopen\CANopenNode_STM32\cia402.c</FilePath>
             </File>
             <File>
-              <FileName>cia402device.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\CANopen\CANopenNode_STM32\cia402device.c</FilePath>
-            </File>
-            <File>
               <FileName>motor_control_interface.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\CANopen\CANopenNode_STM32\motor_control_interface.c</FilePath>
+            </File>
+            <File>
+              <FileName>cia402device.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CANopen\CANopenNode_STM32\cia402device.c</FilePath>
             </File>
           </Files>
         </Group>

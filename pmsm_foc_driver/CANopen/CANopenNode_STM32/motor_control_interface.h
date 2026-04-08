@@ -55,9 +55,9 @@ void motor_switch_to_torque_mode(int32_t target_torque); /* 切换到扭矩模�
  *                                                      ↓
  *                                    PositionControlRegulation = ENABLE
  */
-void motor_set_target_position(int32_t position);               /* 设置目标位置 (PPR), 立即执行 */
-void motor_set_target_position_with_duration(int32_t position, float duration_sec); /* 带运动时间 */
-void motor_switch_to_position_mode(int32_t target_pos); /* 切换到位置模式 */
+void motor_set_target_position(float position);               /* 设置目标位置 (弧度), 立即执行 */
+void motor_set_target_position_with_duration(float position, float duration_sec); /* 带运动时间(弧度) */
+void motor_switch_to_position_mode(float target_pos); /* 切换到位置模式(弧度) */
 
 /* 斜坡控制 */
 void motor_stop_ramp(void);               /* 停止当前斜坡，保持当前值 */

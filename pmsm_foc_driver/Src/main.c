@@ -119,19 +119,19 @@ int main(void)
 
 //  MC_StartMotor1();
 
-  /* Wait for alignment to complete */
+//   /* Wait for alignment to complete */
 //  while (MC_GetAlignmentStatusMotor1() != TC_ALIGNMENT_COMPLETED)
 //  {
 //    HAL_Delay(1);
 //  }
 
-//  /* Now safe to disable position controller - alignment is done */
+// //  /* Now safe to disable position controller - alignment is done */
 //  pPosCtrl[M1]->PositionControlRegulation = DISABLE;
 //  STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
 
-//  /* Send speed ramp command after position ctrl is disabled */
+// //  /* Send speed ramp command after position ctrl is disabled */
 
-//  MC_ProgramSpeedRampMotor1_F(0, 10); /* 0 RPM, 1s ramp */
+//  MC_ProgramSpeedRampMotor1_F(100, 10); /* 0 RPM, 1s ramp */
 
   /* USER CODE END 2 */
 

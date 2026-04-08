@@ -21,6 +21,54 @@ static int8_t current_mode = MODE_NO_MODE;
 static CIA402_State_t last_state = SWITCH_ON_DISABLED;
 
 /*===========================================================================
+ * 辅助函数
+ *===========================================================================*/
+
+/* 编码器PPR - 需要根据实际电机编码器设置
+ * MC SDK使用弧度，CANopen使用PPR
+ * 例如: 4000 PPR = 2π rad
+ */
+#define ENCODER_PPR     4000
+
+/* PPR转弧度: rad = ppr * (2π / ppr_per_rev) */
+static inline float ppr_to_rad(int32_t ppr)
+{
+    return (float)ppr * (2.0f * 3.14159265359f) / (float)ENCODER_PPR;
+}
+
+/* 设置位置目标（带持续时间计算）
+ * 根据 x6081_profileVelocity 计算运动时间，实现平滑的位置控制
+ *
+ * 注意: MC SDK使用弧度作为位置单位，CANopen使用PPR
+ * 这里做单位转换: PPR -> 弧度
+ */
+static void cia402_set_position_with_duration(int32_t target_pos)
+{
+    int32_t current_pos = motor_get_position();
+    int32_t distance = (target_pos > current_pos) ?
+                       (target_pos - current_pos) :
+                       (current_pos - target_pos);
+    int32_t profile_vel = OD_RAM.x6081_profileVelocity;
+
+    /* 如果profile velocity为0，使用默认值10 PPR/s (安全速度) */
+    if (profile_vel <= 0) {
+        profile_vel = 10;
+    }
+
+    /* 计算运动时间（秒）: t = distance / velocity */
+    float duration = (float)distance / (float)profile_vel;
+
+    /* 确保最小时间，避免0 duration导致的立即跳变 */
+    if (duration < 0.1f) {
+        duration = 0.1f;
+    }
+
+    /* 转换为弧度后设置目标位置 */
+    float target_rad = ppr_to_rad(target_pos);
+    motor_set_target_position_with_duration(target_rad, duration);
+}
+
+/*===========================================================================
  * CIA402 初始化
  *===========================================================================*/
 
@@ -62,6 +110,16 @@ void cia402_process(void)
     uint16_t statusword = 0;
     CIA402_State_t new_state;
 
+    /* DEBUG: 打印接收到的控制字 */
+    printf("[CIA402] RX controlword=0x%04X, current_state=%d\r\n",
+           controlword, cia402.axis.state);
+
+    /* 如果控制字为0，不处理（避免误触发DISABLE_VOLTAGE命令） */
+    if (controlword == 0)
+    {
+        return;
+    }
+
     /* 调用标准库状态机 */
     cia402_state_machine(&cia402.axis, controlword);
 
@@ -72,12 +130,13 @@ void cia402_process(void)
     /* 检测状态变化 */
     if (new_state != last_state)
     {
+        printf("[CIA402] State changed: %d -> %d\r\n", last_state, new_state);
+
         /* 状态变化处理 */
         switch (new_state)
         {
         case OPERATION_ENABLED:
-            printf("[CIA402] State: OPERATION_ENABLED (last=%d, target_mode=%d, stopped=%d)\r\n",
-                   last_state, cia402.target_mode, motor_is_stopped());
+            printf("[CIA402] -> OPERATION_ENABLED\r\n");
             /* 进入运行状态 - 启动电机
              * 如果有待处理的模式切换，先处理模式切换
              */
@@ -86,9 +145,7 @@ void cia402_process(void)
                 /* 有待处理的模式切换，先执行切换
                  * 注意：motor_switch_to_position_mode已经设置了控制模式，不需要再motor_start()
                  */
-                printf("[CIA402] Executing pending switch to %d\r\n", cia402.target_mode);
-                printf("[CIA402] OD_RAM.x607A_targetPosition = %ld\r\n", OD_RAM.x607A_targetPosition);
-                printf("[CIA402] OD_RAM.x60FF_targetVelocity = %ld\r\n", OD_RAM.x60FF_targetVelocity);
+                printf("[CIA402] Executing pending mode switch to %d\r\n", cia402.target_mode);
                 current_mode = cia402.target_mode;
                 cia402.target_mode = MODE_NO_MODE;
 
@@ -99,9 +156,8 @@ void cia402_process(void)
                 }
                 else if (current_mode == MODE_PROFILE_POSITION)
                 {
-                    /* 执行时读取当前OD中的目标位置，而不是之前保存的值 */
-                    printf("[CIA402] Using current OD target pos: %ld\r\n", OD_RAM.x607A_targetPosition);
-                    motor_switch_to_position_mode(OD_RAM.x607A_targetPosition);
+                    /* 执行时读取当前OD中的目标位置 */
+                    cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
                     /* 位置模式不需要调用motor_start()，已经在上面设置好了 */
                 }
                 else if (current_mode == MODE_TORQUE)
@@ -112,23 +168,40 @@ void cia402_process(void)
             }
             else if (last_state == SWITCHED_ON || last_state == READY_TO_SWITCH_ON)
             {
-                printf("[CIA402] Normal start\r\n");
+                printf("[CIA402] Normal start from %d\r\n", last_state);
                 motor_start();
             }
             break;
 
         case SWITCH_ON_DISABLED:
-        case READY_TO_SWITCH_ON:
-        case SWITCHED_ON:
-            /* 进入非运行状态 - 确保电机停止 */
+            printf("[CIA402] -> SWITCH_ON_DISABLED\r\n");
             if (last_state == OPERATION_ENABLED)
             {
+                printf("[CIA402] Calling motor_stop()\r\n");
+                motor_stop();
+            }
+            break;
+
+        case READY_TO_SWITCH_ON:
+            printf("[CIA402] -> READY_TO_SWITCH_ON\r\n");
+            if (last_state == OPERATION_ENABLED)
+            {
+                printf("[CIA402] Calling motor_stop()\r\n");
+                motor_stop();
+            }
+            break;
+
+        case SWITCHED_ON:
+            printf("[CIA402] -> SWITCHED_ON\r\n");
+            if (last_state == OPERATION_ENABLED)
+            {
+                printf("[CIA402] Calling motor_stop()\r\n");
                 motor_stop();
             }
             break;
 
         case FAULT:
-            /* 进入故障状态 - 紧急停止 */
+            printf("[CIA402] -> FAULT\r\n");
             motor_emergency_stop();
             break;
 
@@ -159,8 +232,8 @@ void cia402_process(void)
             break;
 
         case MODE_PROFILE_POSITION:
-            /* 轮廓位置模式 */
-            motor_set_target_position(OD_RAM.x607A_targetPosition);
+            /* 轮廓位置模式 - 使用profile velocity计算运动时间 */
+            cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
             break;
 
         case MODE_TORQUE:
@@ -184,14 +257,11 @@ void cia402_process(void)
     {
         /* 模式发生变化且处于运行状态 - 需要安全切换 */
         int8_t new_mode = OD_RAM.x6060_modesOfOperation;
-        printf("[CIA402] Mode change req: %d -> %d, stopped=%d\r\n",
-               current_mode, new_mode, motor_is_stopped());
 
         if (motor_is_stopped())
         {
             /* 电机已停止，直接切换 */
             current_mode = new_mode;
-            printf("[CIA402] Mode direct switch to %d\r\n", new_mode);
 
             /* 根据新模式配置电机 */
             if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
@@ -201,7 +271,7 @@ void cia402_process(void)
             }
             else if (new_mode == MODE_PROFILE_POSITION)
             {
-                motor_switch_to_position_mode(OD_RAM.x607A_targetPosition);
+                cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
                 /* 位置模式不需要motor_start()，已在上面设置好 */
             }
             else if (new_mode == MODE_TORQUE)
@@ -218,19 +288,16 @@ void cia402_process(void)
             if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
             {
                 cia402.switch_target_value = OD_RAM.x60FF_targetVelocity;
-                printf("[CIA402] Store vel target: %ld\r\n", cia402.switch_target_value);
             }
             else if (new_mode == MODE_PROFILE_POSITION)
             {
                 cia402.switch_target_value = OD_RAM.x607A_targetPosition;
-                printf("[CIA402] Store pos target: %ld\r\n", cia402.switch_target_value);
             }
             else if (new_mode == MODE_TORQUE)
             {
                 cia402.switch_target_value = OD_RAM.x6071_targetTorque;
             }
             motor_stop();
-            printf("[CIA402] Motor stop called, waiting...\r\n");
         }
     }
 
@@ -238,7 +305,6 @@ void cia402_process(void)
     if (motor_is_stopped() && cia402.target_mode != MODE_NO_MODE &&
         new_state == OPERATION_ENABLED)
     {
-        printf("[CIA402] Executing pending mode switch: %d\r\n", cia402.target_mode);
         current_mode = cia402.target_mode;
         cia402.target_mode = MODE_NO_MODE;
 
@@ -249,7 +315,7 @@ void cia402_process(void)
         }
         else if (current_mode == MODE_PROFILE_POSITION)
         {
-            motor_switch_to_position_mode(cia402.switch_target_value);
+            cia402_set_position_with_duration(cia402.switch_target_value);
         }
         else if (current_mode == MODE_TORQUE)
         {

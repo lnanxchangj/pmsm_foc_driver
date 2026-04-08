@@ -50,15 +50,11 @@
  */
 void motor_start(void)
 {
-    printf("[MTR] motor_start called\r\n");
-
     MC_StartMotor1();
 
     /* 等待alignment完成 */
     while (MC_GetAlignmentStatusMotor1() != TC_ALIGNMENT_COMPLETED)
         ;
-
-    printf("[MTR] motor_start: alignment done\r\n");
 }
 
 /* 停止电机 - 正常减速停止 */
@@ -119,21 +115,21 @@ void motor_set_target_torque(int32_t torque_mnm)
  *
  * 注意：Duration=0表示立即到达（follow模式），>0表示梯形速度轨迹
  */
-void motor_set_target_position(int32_t position)
+void motor_set_target_position(float position)
 {
-    /* position 单位是脉冲(PPR) */
+    /* position 单位是弧度(rad) */
     /* Duration=0 表示立即执行（follow模式） */
     MC_ProgramPositionCommandMotor1((float_t)position, 0.0f);
 }
 
-/* 设置目标位置，带运动时间 (pulse, seconds)
+/* 设置目标位置，带运动时间 (弧度, seconds)
  *
  * Duration > 0 时使用梯形速度轨迹：
  * 1. 加速阶段
  * 2. 匀速阶段
  * 3. 减速阶段
  */
-void motor_set_target_position_with_duration(int32_t position, float duration_sec)
+void motor_set_target_position_with_duration(float position, float duration_sec)
 {
     MC_ProgramPositionCommandMotor1((float_t)position, duration_sec);
 }
@@ -216,49 +212,62 @@ AlignStatus_t motor_get_alignment_status(void)
 }
 
 /*===========================================================================
- * 模式切换 - 标准MCP方式
+ * 模式切换
  *
- * 与MCP协议完全一致：
- * - 通过MC_ProgramSpeedRampMotor1_F()缓冲速度命令
- * - 通过MC_ProgramTorqueRampMotor1_F()缓冲扭矩命令
- * - 通过MC_ProgramPositionCommandMotor1()缓冲位置命令
+ * MC SDK的核心逻辑：
+ * - Speed/Torque模式：使用STC_SetControlMode()切换控制模式
+ * - Position模式：使用TC_MoveCommand()启用位置控制（不禁用STC模式）
  *
- * 真正的模式切换在MCI_ExecBufferedCommands()中完成（由定时器中断调用）
+ * 关键：从Position模式切换到Speed/Torque模式时，必须先禁用位置控制！
  *===========================================================================*/
 
 /* 切换到速度模式并设置目标速度
  *
- * 标准方式：直接调用MC_ProgramSpeedRampMotor1_F
- * 模式切换会在MCI_ExecBufferedCommands()中自动完成
+ * MC SDK方式：
+ * 1. 禁用位置控制（pPosCtrl->PositionControlRegulation = DISABLE）
+ * 2. 设置控制模式为速度模式（STC_SetControlMode）
+ * 3. 设置目标速度（MC_ProgramSpeedRampMotor1_F）
  */
 void motor_switch_to_velocity_mode(int32_t target_vel)
 {
-    printf("[VEL] switch_to_velocity_mode: target=%ld\r\n", target_vel);
-    /* 速度命令会自动切换到速度模式（由MCI_ExecBufferedCommands处理） */
+    /* 1. 必须先禁用位置控制！ */
+    pPosCtrl[M1]->PositionControlRegulation = DISABLE;
+    /* 2. 设置控制模式为速度模式 */
+    STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+    /* 3. 设置目标速度 */
     MC_ProgramSpeedRampMotor1_F((float_t)target_vel, 0);
 }
 
 /* 切换到扭矩模式并设置目标力矩
  *
- * 标准方式：直接调用MC_ProgramTorqueRampMotor1_F
- * 模式切换会在MCI_ExecBufferedCommands()中自动完成
+ * MC SDK方式：
+ * 1. 禁用位置控制（pPosCtrl->PositionControlRegulation = DISABLE）
+ * 2. 设置控制模式为扭矩模式（STC_SetControlMode）
+ * 3. 设置目标扭矩（MC_ProgramTorqueRampMotor1_F）
  */
 void motor_switch_to_torque_mode(int32_t target_torque)
 {
-    /* 扭矩命令会自动切换到扭矩模式（由MCI_ExecBufferedCommands处理） */
+    /* 1. 必须先禁用位置控制！ */
+    pPosCtrl[M1]->PositionControlRegulation = DISABLE;
+    /* 2. 设置控制模式为扭矩模式 */
+    STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
+    /* 3. 设置目标扭矩 */
     float_t torque_amp = (float_t)target_torque / 1000.0f;
     MC_ProgramTorqueRampMotor1_F(torque_amp, 0);
 }
 
 /* 切换到位置模式并设置目标位置
  *
- * 标准方式：直接调用MC_ProgramPositionCommandMotor1
- * 位置控制在TC_MoveCommand()中自动启用
+ * MC SDK方式：
+ * 1. 调用TC_MoveCommand启用位置控制（自动设置PositionControlRegulation = ENABLE）
+ * 2. 设置目标位置（MC_ProgramPositionCommandMotor1）
+ *
+ * 注意：Position模式不通过STC_SetControlMode切换，而是通过TC_MoveCommand
  */
-void motor_switch_to_position_mode(int32_t target_pos)
+void motor_switch_to_position_mode(float target_pos)
 {
-    /* 位置命令会自动启用位置控制（由TC_MoveCommand处理） */
-    printf("[POS] switch_to_position_mode: target=%ld\r\n", target_pos);
+    /* TC_MoveCommand会启用位置控制，设置目标位置和运动时间 */
+    /* Duration=0表示立即到达（follow模式） */
     MC_ProgramPositionCommandMotor1((float_t)target_pos, 0.0f);
 }
 
