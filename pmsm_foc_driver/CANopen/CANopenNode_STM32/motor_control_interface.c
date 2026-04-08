@@ -70,6 +70,49 @@ void motor_emergency_stop(void)
     MC_StopMotor1();
 }
 
+/* 暂停电机 - 用于Disable Operation命令
+ * CIA402规范：Disable Op后电机应减速停止，保持位置
+ *
+ * 与motor_stop()的区别：
+ * - motor_stop()用于Shutdown，完全停止（200ms）
+ * - motor_hold_position()用于Disable Op，暂停后可以快速恢复（100ms）
+ *
+ * MC SDK方式：
+ * 1. 停止当前斜坡（如果有）
+ * 2. 禁用位置控制
+ * 3. 切换到速度模式并减速到0
+ */
+void motor_hold_position(void)
+{
+    /* 1. 先停止当前斜坡 */
+    MC_StopRampMotor1();
+    /* 2. 禁用位置控制 */
+    pPosCtrl[M1]->PositionControlRegulation = DISABLE;
+    /* 3. 切换到速度模式 */
+    STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+    /* 4. 设置速度为0，让电机减速停止 */
+    MC_ProgramSpeedRampMotor1_F(0.0f, 100); /* 100ms减速，比Shutdown更快 */
+}
+
+/* 快速停止 - 用于Quick Stop命令
+ * CIA402规范：Quick Stop后电机应最快速减速停止
+ *
+ * 与motor_stop()的区别：
+ * - motor_stop()用于Shutdown（200ms减速）
+ * - motor_quick_stop()用于Quick Stop（50ms快速减速）
+ */
+void motor_quick_stop(void)
+{
+    /* 1. 先停止当前斜坡 */
+    MC_StopRampMotor1();
+    /* 2. 禁用位置控制 */
+    pPosCtrl[M1]->PositionControlRegulation = DISABLE;
+    /* 3. 切换到速度模式 */
+    STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
+    /* 4. 设置速度为0，让电机快速减速停止 */
+    MC_ProgramSpeedRampMotor1_F(0.0f, 50); /* 50ms快速减速 */
+}
+
 /* 设置目标速度 (RPM) - 标准MCP方式
  *
  * 内部调用链：

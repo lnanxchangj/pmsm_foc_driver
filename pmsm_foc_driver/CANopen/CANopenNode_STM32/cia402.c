@@ -20,9 +20,32 @@ static int8_t current_mode = MODE_NO_MODE;
 /* 上一个状态 (用于状态变化检测) */
 static CIA402_State_t last_state = SWITCH_ON_DISABLED;
 
+/* 控制字已收到标志 - 用于跳过初始的0值控制字
+ * CIA402规范：controlword=0是DISABLE_VOLTAGE命令
+ * 在CANopen通信未建立前，避免误触发状态转移
+ */
+static uint8_t controlword_received = 0;
+
 /*===========================================================================
  * 辅助函数
  *===========================================================================*/
+
+/* CIA402 状态名称（用于调试） */
+static const char* state_name(CIA402_State_t state)
+{
+    switch (state)
+    {
+        case NOT_READY_TO_SWITCH_ON: return "NOT_READY";
+        case SWITCH_ON_DISABLED:      return "SWITCH_ON_DISABLED";
+        case READY_TO_SWITCH_ON:      return "READY_TO_SWITCH_ON";
+        case SWITCHED_ON:              return "SWITCHED_ON";
+        case OPERATION_ENABLED:        return "OPERATION_ENABLED";
+        case QUICK_STOP_ACTIVE:        return "QUICK_STOP_ACTIVE";
+        case FAULT_REACTION_ACTIVE:    return "FAULT_REACTION_ACTIVE";
+        case FAULT:                    return "FAULT";
+        default:                       return "UNKNOWN";
+    }
+}
 
 /* 编码器PPR - 需要根据实际电机编码器设置
  * MC SDK使用弧度，CANopen使用PPR
@@ -98,6 +121,9 @@ void cia402_init(void)
 
     /* 初始状态 - 与状态机一致 */
     last_state = cia402.axis.state;
+
+    /* 重置控制字接收标志 - 等待主站发送第一个有效命令 */
+    controlword_received = 0;
 }
 
 /*===========================================================================
@@ -110,12 +136,43 @@ void cia402_process(void)
     uint16_t statusword = 0;
     CIA402_State_t new_state;
 
-    /* DEBUG: 打印接收到的控制字 */
-    printf("[CIA402] RX controlword=0x%04X, current_state=%d\r\n",
-           controlword, cia402.axis.state);
+    /* 跟踪控制字变化，用于检测首次有效命令
+     * CIA402规范中controlword=0是DISABLE_VOLTAGE命令
+     * 但在没有CANopen主站发送命令时，应该忽略初始的0值
+     */
+    static uint16_t last_controlword = 0;
+    static uint32_t same_cw_count = 0;  /* 连续相同控制字的计数 */
 
-    /* 如果控制字为0，不处理（避免误触发DISABLE_VOLTAGE命令） */
-    if (controlword == 0)
+    /* 如果控制字变化了，重置计数器 */
+    if (controlword != last_controlword)
+    {
+        if (same_cw_count > 1 && last_controlword != 0)
+        {
+            printf("[CIA402] Controlword unchanged for %lu cycles\r\n", same_cw_count);
+        }
+        same_cw_count = 0;
+
+        /* 如果控制字首次从0变为非0，说明主站已开始发送有效命令 */
+        if (controlword != 0 && last_controlword == 0)
+        {
+            controlword_received = 1;
+            printf("[CIA402] First valid controlword received: 0x%04X\r\n", controlword);
+        }
+
+        /* 只在变化时打印调试信息 */
+        printf("[CIA402] RX controlword=0x%04X, current_state=%d\r\n",
+               controlword, cia402.axis.state);
+        last_controlword = controlword;
+    }
+    else
+    {
+        same_cw_count++;
+    }
+
+    /* 如果尚未收到有效控制字，跳过状态机处理
+     * 这避免了controlword=0导致的误触发DISABLE_VOLTAGE命令
+     */
+    if (!controlword_received)
     {
         return;
     }
@@ -130,7 +187,8 @@ void cia402_process(void)
     /* 检测状态变化 */
     if (new_state != last_state)
     {
-        printf("[CIA402] State changed: %d -> %d\r\n", last_state, new_state);
+        printf("[CIA402] State changed: %d(%s) -> %d(%s), CW=0x%04X\r\n",
+               last_state, state_name(last_state), new_state, state_name(new_state), controlword);
 
         /* 状态变化处理 */
         switch (new_state)
@@ -195,8 +253,17 @@ void cia402_process(void)
             printf("[CIA402] -> SWITCHED_ON\r\n");
             if (last_state == OPERATION_ENABLED)
             {
-                printf("[CIA402] Calling motor_stop()\r\n");
-                motor_stop();
+                printf("[CIA402] Calling motor_hold_position()\r\n");
+                motor_hold_position();
+            }
+            break;
+
+        case QUICK_STOP_ACTIVE:
+            printf("[CIA402] -> QUICK_STOP_ACTIVE\r\n");
+            if (last_state == OPERATION_ENABLED)
+            {
+                printf("[CIA402] Calling motor_quick_stop()\r\n");
+                motor_quick_stop();
             }
             break;
 
@@ -222,8 +289,13 @@ void cia402_process(void)
     /* 根据状态机标志执行相应动作 */
     if (cia402.axis.flags.axis_func_enabled)
     {
-        /* 运行使能 - 执行运动控制 */
-        switch (current_mode)
+        /* 如果处于Quick Stop状态，不执行位置/扭矩命令，让电机减速停止 */
+        if (new_state == QUICK_STOP_ACTIVE)
+        {
+            /* Quick Stop状态下只执行速度模式减速到0 */
+            /* 不 reprogram 轨迹 */
+        }
+        else switch (current_mode)
         {
         case MODE_VELOCITY:
         case MODE_PROFILE_VELOCITY:

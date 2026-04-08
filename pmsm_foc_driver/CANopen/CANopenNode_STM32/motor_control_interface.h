@@ -22,8 +22,10 @@
 
 /* 电机启停控制 */
 void motor_start(void);               /* 启动电机 */
-void motor_stop(void);                /* 正常停止（减速停止） */
+void motor_stop(void);                /* 正常停止（减速停止，200ms） */
 void motor_emergency_stop(void);      /* 紧急停止（立即切断输出） */
+void motor_hold_position(void);       /* 暂停（用于Disable Op，100ms） */
+void motor_quick_stop(void);          /* 快速停止（用于Quick Stop，50ms） */
 
 /* 速度模式控制 - 标准MCP方式
  *

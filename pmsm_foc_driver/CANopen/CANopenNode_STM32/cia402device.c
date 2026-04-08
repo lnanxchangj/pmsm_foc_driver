@@ -151,7 +151,7 @@ void cia402_state_machine(cia402_axis_t *axis, uint16_t controlword)
         {
             // transition 11
             axis->state = QUICK_STOP_ACTIVE;
-            *(axis->statusword) |= QUICK_STOP_ACTIVE;
+            *(axis->statusword) = CIA402_STATUSWORD_QUICK_STOP_ACTIVE;
             axis->transition = OPERATION_ENABLED_TO_QUICK_STOP_ACTIVE;
         }
         else
@@ -173,15 +173,13 @@ void cia402_state_machine(cia402_axis_t *axis, uint16_t controlword)
         else if (IS_CIA402_COMMAND(controlword, ENABLE_OPERATION))
         {
             // transition 16, supporting not recommended
-            *(axis->statusword) |= QUICK_STOP_ACTIVE;
-            break;
             axis->state = OPERATION_ENABLED;
-            *(axis->statusword) |= OPERATION_ENABLED;
+            *(axis->statusword) = OPERATION_ENABLED;
             axis->transition = QUICK_STOP_ACTIVE_TO_OPERATION_ENABLED;
         }
         else
         {
-            *(axis->statusword) |= QUICK_STOP_ACTIVE;
+            *(axis->statusword) = CIA402_STATUSWORD_QUICK_STOP_ACTIVE;
         }
         break;
     }

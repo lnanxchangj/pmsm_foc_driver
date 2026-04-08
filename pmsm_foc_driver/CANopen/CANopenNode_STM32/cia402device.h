@@ -66,6 +66,12 @@
 #define CIA402_STATUSWORD_CSP_DRIVE_FOLLOWS_COMMAND                0x1000
 #define CIA402_STATUSWORD_CSP_FOLLOWING_ERROR                      0x2000
 
+/* Quick Stop Active statusword value:
+ * READY_TO_SWITCH_ON | OPERATION_ENABLED | QUICKSTOP_ENABLED
+ * = 0x01 | 0x04 | 0x20 = 0x25
+ */
+#define CIA402_STATUSWORD_QUICK_STOP_ACTIVE                       0x0025
+
 enum cia402_controlword_t {
     SHUTDOWN,
     SWITCH_ON,
