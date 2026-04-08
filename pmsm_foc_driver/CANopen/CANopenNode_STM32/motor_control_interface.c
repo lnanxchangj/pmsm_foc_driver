@@ -89,7 +89,7 @@ uint8_t motor_check_start_completed(void)
         motor_start_completed = 1;
         return 1;
     }
-    else if (align_status == TC_ALIGNMENT_FAILED)
+    else if (align_status == TC_ALIGNMENT_ERROR)
     {
         /* 对齐失败 - 触发故障 */
         motor_start_pending = 0;
@@ -277,12 +277,16 @@ int32_t motor_get_position(void)
 {
     float_t position_rad = MC_GetCurrentPosition1();
 
-    /* 转换为计数
-     * counts = rad * PPR / (2π)
-     * 使用M1_ENCODER_PPR (定义于pmsm_motor_parameters.h，值为1000)
+    /* 转换为计数 (counts)
+     *
+     * MC_GetCurrentPosition1()返回弧度
+     * MC SDK内部使用4倍频计数，所以每转计数 = M1_ENCODER_PPR * 4
+     * 对于1000 PPR编码器: counts_per_rev = 4000
+     *
+     * 转换公式: counts = rad * (counts_per_rev) / (2π)
      */
-    extern uint16_t M1_ENCODER_PPR;
-    int32_t counts = (int32_t)(position_rad * (float_t)M1_ENCODER_PPR / (2.0f * 3.14159265359f));
+    /* counts_per_rev = 1000 * 4 = 4000 */
+    int32_t counts = (int32_t)(position_rad * 4000.0f / (2.0f * 3.14159265359f));
     return counts;
 }
 
