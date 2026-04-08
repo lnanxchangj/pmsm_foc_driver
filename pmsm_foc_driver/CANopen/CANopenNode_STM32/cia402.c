@@ -36,6 +36,12 @@ static uint8_t controlword_received = 0;
  */
 static uint8_t fault_triggered = 0;
 
+/* 停止命令已发送标志 - 用于防止速度模式处理器在减速过程中覆盖停止命令
+ * 当mode switch请求触发motor_stop()后，此标志被设置
+ * 在电机完全停止前，速度模式处理器不会发送新的速度命令
+ */
+static uint8_t stop_for_mode_switch = 0;
+
 /*===========================================================================
  * 辅助函数
  *===========================================================================*/
@@ -108,6 +114,35 @@ static inline int32_t rad_to_ppr(float rad)
  * 这里做单位转换: PPR -> 弧度
  *===========================================================================*/
 
+/* 计算绝对目标位置（考虑绝对/相对位置）
+ *
+ * CIA402规范:
+ * - 控制字 bit 6 = 0: 绝对位置 - 目标位置相对于原点
+ * - 控制字 bit 6 = 1: 相对位置 - 目标位置相对于当前位置
+ *
+ * 返回: 计算后的绝对目标位置
+ */
+static int32_t cia402_calc_absolute_target(int32_t target_pos, uint16_t controlword)
+{
+    /* 检查控制字 bit 6 - 绝对/相对位置 */
+    if (controlword & CIA402_CONTROLWORD_ABS_REL)
+    {
+        /* 相对位置: 绝对目标 = 当前位置 + 相对位移 */
+        int32_t current_pos = motor_get_position();
+        int32_t absolute_target = current_pos + target_pos;
+        printf("[CIA402] RELATIVE POSITION: controlword=0x%04X, bit6=%d, current=%d, delta=%d, absolute=%d\r\n",
+               controlword, (controlword >> 6) & 1, current_pos, target_pos, absolute_target);
+        return absolute_target;
+    }
+    else
+    {
+        /* 绝对位置: 直接使用目标位置 */
+        printf("[CIA402] ABSOLUTE POSITION: controlword=0x%04X, bit6=%d, target=%d\r\n",
+               controlword, (controlword >> 6) & 1, target_pos);
+        return target_pos;
+    }
+}
+
 static void cia402_set_position_with_duration(int32_t target_pos)
 {
     int32_t current_pos = motor_get_position();
@@ -172,10 +207,10 @@ static void cia402_update_statusword(void)
  *===========================================================================*/
 
 /* ALstatus 变量 - 用于 CIA402 状态机
- * CIA402规范要求：当应用层初始化完成后，ALstatus应该被设置为AL_STATUS_OP
- * 这里我们创建一个变量，在初始化时设置为AL_STATUS_OP让状态机正确转移
+ * 设置为 AL_STATUS_OP 让状态机正常运行
+ * 注意：OPERATION_ENABLED 状态检查 AL_status != OP 来检测连接丢失
  */
-static uint16_t AL_status = AL_STATUS_OP;
+static uint16_t AL_status = AL_STATUS_OP;  /* 初始化为OP状态 */
 
 void cia402_init(void)
 {
@@ -321,18 +356,19 @@ void cia402_process(void)
         case OPERATION_ENABLED:
             printf("[CIA402] -> OPERATION_ENABLED\r\n");
 
-            /* 检查启动是否完成（非阻塞方式） */
-            if (!motor_check_start_completed())
+            /* 检查是否已完全启动 */
+            if (!motor_is_start_completed())
             {
-                /* 启动尚未完成，等待下一次调用 */
-                printf("[CIA402] Waiting for motor start completion...\r\n");
+                /* 电机尚未完全启动，需要先启动 */
+                printf("[CIA402] Starting motor...\r\n");
+                motor_start();
+                /* 等待下一次调用检查启动完成 */
                 break;
             }
 
-            /* 启动已完成，执行模式配置 */
+            /* 启动已完成，执行待处理的模式切换（如果有） */
             if (cia402.target_mode != MODE_NO_MODE)
             {
-                /* 有待处理的模式切换，先执行切换 */
                 printf("[CIA402] Executing pending mode switch to %d\r\n", cia402.target_mode);
                 current_mode = cia402.target_mode;
                 cia402.target_mode = MODE_NO_MODE;
@@ -362,10 +398,9 @@ void cia402_process(void)
             printf("[CIA402] -> SWITCH_ON_DISABLED\r\n");
             if (last_state == OPERATION_ENABLED)
             {
-                printf("[CIA402] Calling motor_stop()\r\n");
-                motor_stop();
+                printf("[CIA402] Calling motor_emergency_stop()\r\n");
+                motor_emergency_stop();
             }
-            /* 清除启动状态 */
             break;
 
         case READY_TO_SWITCH_ON:
@@ -425,16 +460,43 @@ void cia402_process(void)
         {
         case MODE_VELOCITY:
         case MODE_PROFILE_VELOCITY:
-            /* 速度模式 - 每次调用都设置速度（确保SDO写入的值被传递） */
-            motor_set_target_velocity(OD_RAM.x60FF_targetVelocity);
+            /* 速度模式 - 每次调用都设置速度（确保SDO写入的值被传递）
+             * 但如果正在等待电机停止以切换模式，不要发送速度命令
+             */
+            if (stop_for_mode_switch)
+            {
+                /* 正在等待电机停止以切换模式，让电机减速停止 */
+            }
+            else
+            {
+                motor_set_target_velocity(OD_RAM.x60FF_targetVelocity);
+            }
             break;
 
         case MODE_PROFILE_POSITION:
-            /* 轮廓位置模式 - 使用profile velocity计算运动时间 */
-            /* 注意: 每次调用都重新计算duration，可能导致位置命令重复执行
-             * 实际应用中应根据需求优化
+            /* 轮廓位置模式 - 使用profile velocity计算运动时间
+             * 支持绝对/相对位置（根据控制字bit 6）
+             *
+             * 注意: 只在目标位置(x607A)或控制字变化时重新编程轨迹
+             * 避免每周期重复编程导致轨迹控制器行为异常
              */
-            cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
+            {
+                static uint16_t last_cw_for_pos = 0;
+                static int32_t last_x607A = 0;
+                uint16_t cw = OD_RAM.x6040_controlword;
+                int32_t x607A = OD_RAM.x607A_targetPosition;
+
+                /* 检测x607A或controlword是否变化 */
+                if (x607A != last_x607A || cw != last_cw_for_pos)
+                {
+                    int32_t abs_target = cia402_calc_absolute_target(x607A, cw);
+                    printf("[CIA402] POSITION TARGET CHANGED: cw=0x%04X, x607A=%d, abs_target=%d\r\n",
+                           cw, x607A, abs_target);
+                    last_cw_for_pos = cw;
+                    last_x607A = x607A;
+                    cia402_set_position_with_duration(abs_target);
+                }
+            }
             break;
 
         case MODE_TORQUE:
@@ -464,6 +526,7 @@ void cia402_process(void)
             /* 电机已停止，直接切换 */
             printf("[CIA402] Mode switch (stopped): %d -> %d\r\n", current_mode, new_mode);
             current_mode = new_mode;
+            stop_for_mode_switch = 0;  /* 清除停止标志 */
 
             /* 根据新模式配置电机 */
             if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
@@ -472,6 +535,12 @@ void cia402_process(void)
             }
             else if (new_mode == MODE_PROFILE_POSITION)
             {
+                /* 切换到位置模式时，使用当前位置作为目标位置
+                 * 避免电机突然跑回旧的目标位置
+                 */
+                int32_t current_pos = motor_get_position();
+                OD_RAM.x607A_targetPosition = current_pos;
+                printf("[CIA402] Position mode: target = current = %d\r\n", current_pos);
                 cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
             }
             else if (new_mode == MODE_TORQUE)
@@ -481,11 +550,22 @@ void cia402_process(void)
         }
         else
         {
-            /* 电机还在转，先停止，保存目标模式 */
-            printf("[CIA402] Mode switch (running): deferring %d -> %d\r\n", current_mode, new_mode);
+            /* 电机还在转，先停止，保存目标模式
+             * 注意：只有尚未保存目标模式时才调用motor_stop()
+             * 否则每次process()都会重置斜坡，导致电机永远无法停止
+             */
+            if (cia402.target_mode == MODE_NO_MODE)
+            {
+                /* 第一次检测到需要切换，开始停止电机 */
+                printf("[CIA402] Mode switch start: %d -> %d, motor stopping...\r\n", current_mode, new_mode);
+                motor_stop();
+                stop_for_mode_switch = 1;  /* 标记已发送停止命令 */
+            }
+
+            /* 保存目标模式 */
             cia402.target_mode = new_mode;
 
-            /* 根据模式存储目标值 */
+            /* 保存目标值 */
             if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
             {
                 cia402.switch_target_value = OD_RAM.x60FF_targetVelocity;
@@ -498,7 +578,6 @@ void cia402_process(void)
             {
                 cia402.switch_target_value = OD_RAM.x6071_targetTorque;
             }
-            motor_stop();
         }
     }
 
@@ -509,6 +588,7 @@ void cia402_process(void)
         printf("[CIA402] Executing deferred mode switch to %d\r\n", cia402.target_mode);
         current_mode = cia402.target_mode;
         cia402.target_mode = MODE_NO_MODE;
+        stop_for_mode_switch = 0;  /* 清除停止标志 */
 
         /* 根据新模式配置电机 */
         if (current_mode == MODE_VELOCITY || current_mode == MODE_PROFILE_VELOCITY)
@@ -517,7 +597,13 @@ void cia402_process(void)
         }
         else if (current_mode == MODE_PROFILE_POSITION)
         {
-            cia402_set_position_with_duration(cia402.switch_target_value);
+            /* 切换到位置模式时，使用当前位置作为目标位置
+             * 避免电机突然跑回旧的目标位置
+             */
+            int32_t current_pos = motor_get_position();
+            OD_RAM.x607A_targetPosition = current_pos;
+            printf("[CIA402] Deferred position mode: target = current = %d\r\n", current_pos);
+            cia402_set_position_with_duration(current_pos);
         }
         else if (current_mode == MODE_TORQUE)
         {

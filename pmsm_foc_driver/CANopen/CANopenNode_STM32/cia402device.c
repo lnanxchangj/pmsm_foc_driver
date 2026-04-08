@@ -49,7 +49,12 @@ void cia402_state_machine(cia402_axis_t *axis, uint16_t controlword)
 
     case SWITCH_ON_DISABLED:
     {
-        if (IS_CIA402_COMMAND(controlword, SHUTDOWN) || *(axis->ALstatus) == AL_STATUS_OP)
+        /* 只响应 SHUTDOWN 命令，不检查 AL_STATUS_OP
+         * 原因：AL_STATUS_OP 检查会导致在某些情况下自动转移
+         * 特别是当第一个有效命令是 DISABLE_VOLTAGE (0x0000) 时
+         * 会导致状态机在 SWITCH_ON_DISABLED 和 READY_TO_SWITCH_ON 之间震荡
+         */
+        if (IS_CIA402_COMMAND(controlword, SHUTDOWN))
         {
             // transition 2
             axis->state = READY_TO_SWITCH_ON;

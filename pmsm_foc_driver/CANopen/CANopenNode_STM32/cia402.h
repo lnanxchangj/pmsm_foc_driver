@@ -21,6 +21,13 @@
 #define MODE_HOMING          6
 #define MODE_INTERPOLATED    7
 
+/* 绝对/相对位置控制 - 控制字 Bit 6
+ * CIA402规范: 控制字bit 6决定目标位置是绝对还是相对的
+ *   0 = 绝对位置 (Target position relative to machine origin)
+ *   1 = 相对位置 (Target position relative to current position)
+ */
+#define CIA402_CONTROLWORD_ABS_REL    0x0040
+
 /* CIA402 Handle - 封装库类型并添加扩展字段 */
 typedef struct {
     cia402_axis_t axis;

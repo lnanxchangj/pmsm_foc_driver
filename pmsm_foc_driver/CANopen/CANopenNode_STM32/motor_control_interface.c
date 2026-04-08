@@ -109,8 +109,8 @@ uint8_t motor_is_start_completed(void)
 /* 停止电机 - 正常减速停止 */
 void motor_stop(void)
 {
-    /* 速度设为0，200ms减速时间（标准方式：通过缓冲命令） */
-    MC_ProgramSpeedRampMotor1_F(0.0f, 200);
+    /* 速度设为0，100ms减速时间（通过缓冲命令） */
+    MC_ProgramSpeedRampMotor1_F(0.0f, 100);
 }
 
 /* 紧急停止 - 立即切断输出 */
@@ -394,7 +394,11 @@ AlignStatus_t motor_get_alignment_status(void)
 
 /* 切换到速度模式并设置目标速度
  *
- * MC SDK方式：
+ * MC SDK核心机制：
+ * - TC_PositionRegulation()在PositionControlRegulation=ENABLE时会强制覆盖模式为TORQUE
+ * - 因此切换到速度模式前必须先禁用位置控制！
+ *
+ * 正确调用顺序：
  * 1. 禁用位置控制（pPosCtrl->PositionControlRegulation = DISABLE）
  * 2. 设置控制模式为速度模式（STC_SetControlMode）
  * 3. 设置目标速度（MC_ProgramSpeedRampMotor1_F）
@@ -404,7 +408,7 @@ AlignStatus_t motor_get_alignment_status(void)
  */
 void motor_switch_to_velocity_mode(int32_t target_vel)
 {
-    /* 1. 必须先禁用位置控制！ */
+    /* 1. 必须先禁用位置控制！否则TC_PositionRegulation()会覆盖速度模式 */
     pPosCtrl[M1]->PositionControlRegulation = DISABLE;
 
     /* 2. 设置控制模式为速度模式 */
@@ -416,7 +420,11 @@ void motor_switch_to_velocity_mode(int32_t target_vel)
 
 /* 切换到扭矩模式并设置目标力矩
  *
- * MC SDK方式：
+ * MC SDK核心机制：
+ * - TC_PositionRegulation()在PositionControlRegulation=ENABLE时会强制覆盖模式为TORQUE
+ * - 因此切换到扭矩模式前必须先禁用位置控制！
+ *
+ * 正确调用顺序：
  * 1. 禁用位置控制（pPosCtrl->PositionControlRegulation = DISABLE）
  * 2. 设置控制模式为扭矩模式（STC_SetControlMode）
  * 3. 设置目标扭矩（MC_ProgramTorqueRampMotor1_F）
@@ -440,16 +448,16 @@ void motor_switch_to_torque_mode(int32_t target_torque)
 /* 切换到位置模式并设置目标位置
  *
  * MC SDK方式：
- * 1. 调用TC_MoveCommand启用位置控制（自动设置PositionControlRegulation = ENABLE）
- * 2. 设置目标位置（MC_ProgramPositionCommandMotor1）
+ * - MC_ProgramPositionCommandMotor1()内部调用TC_MoveCommand()
+ * - TC_MoveCommand()会自动设置PositionControlRegulation = ENABLE
+ * - 无需手动禁用位置控制
  *
- * 注意: Position模式不通过STC_SetControlMode切换，而是通过TC_MoveCommand
- *       此函数只配置位置模式，不启动电机
+ * 注意: 此函数只配置位置模式，不启动电机
+ *       Duration=0表示follow模式（立即到达）
  */
 void motor_switch_to_position_mode(float target_pos)
 {
-    /* TC_MoveCommand会启用位置控制，设置目标位置和运动时间 */
-    /* Duration=0表示立即到达（follow模式） */
+    /* TC_MoveCommand会自动启用位置控制 */
     MC_ProgramPositionCommandMotor1((float_t)target_pos, 0.0f);
 }
 
@@ -471,27 +479,19 @@ uint8_t motor_ramp_completed(void)
 /* 检查电机是否已停止
  *
  * 判断条件:
- * 1. 速度参考为0且实际速度足够小（< 5 RPM，考虑死区）
+ * 1. 实际速度足够小（< 10 RPM，考虑死区）
  * 2. 斜坡已完成
- * 3. 命令执行完成
  *
- * 注意: 单独的速度判断可能不可靠，因为速度可能有波动
- *       使用多种条件综合判断更可靠
+ * 注意: 使用较宽松的速度阈值，避免误判
  */
 uint8_t motor_is_stopped(void)
 {
     int32_t vel = motor_get_velocity();
-    int16_t speed_ref = MC_GetMecSpeedReferenceMotor1();
     uint8_t ramp_done = MC_HasRampCompletedMotor1();
-    MCI_CommandState_t cmd_state = MC_GetCommandStateMotor1();
 
-    /* 检查速度参考是否为0 */
-    int8_t speed_ref_is_zero = (speed_ref == 0);
+    /* 检查实际速度是否足够小 (阈值10 RPM) */
+    int8_t speed_is_low = (vel < 10 && vel > -10);
 
-    /* 检查实际速度是否足够小 (阈值5 RPM) */
-    int8_t speed_is_low = (vel < 5 && vel > -5);
-
-    /* 检查斜坡和命令状态 */
-    return (speed_ref_is_zero && speed_is_low && ramp_done &&
-            (cmd_state == MCI_BUFFER_EMPTY || cmd_state == MCI_COMMAND_EXECUTED_SUCCESSFULLY)) ? 1 : 0;
+    /* 检查斜坡是否完成 */
+    return (speed_is_low && ramp_done) ? 1 : 0;
 }
