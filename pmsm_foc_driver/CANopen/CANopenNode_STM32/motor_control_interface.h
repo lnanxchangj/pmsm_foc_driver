@@ -21,11 +21,13 @@
  *===========================================================================*/
 
 /* 电机启停控制 */
-void motor_start(void);               /* 启动电机 */
-void motor_stop(void);                /* 正常停止（减速停止，200ms） */
-void motor_emergency_stop(void);      /* 紧急停止（立即切断输出） */
-void motor_hold_position(void);       /* 暂停（用于Disable Op，100ms） */
-void motor_quick_stop(void);          /* 快速停止（用于Quick Stop，50ms） */
+void motor_start(void);                     /* 启动电机（非阻塞） */
+uint8_t motor_check_start_completed(void);  /* 检查启动是否完成 */
+uint8_t motor_is_start_completed(void);     /* 电机是否已完全启动 */
+void motor_stop(void);                     /* 正常停止（减速停止，200ms） */
+void motor_emergency_stop(void);           /* 紧急停止（立即切断输出） */
+void motor_hold_position(void);            /* 暂停（用于Disable Op，100ms） */
+void motor_quick_stop(void);               /* 快速停止（用于Quick Stop，50ms） */
 
 /* 速度模式控制 - 标准MCP方式
  *
@@ -71,14 +73,14 @@ uint8_t motor_is_stopped(void);           /* 检查电机是否已停止（速�
  *===========================================================================*/
 
 /* 获取当前值 */
-int32_t motor_get_position(void);          /* 获取当前位置 (PPR) */
+int32_t motor_get_position(void);          /* 获取当前位置 (编码器计数) */
 int32_t motor_get_velocity(void);          /* 获取当前速度 (RPM) */
 int32_t motor_get_torque(void);            /* 获取当前力矩 (mNm) */
 
 /* 获取控制状态 */
 MC_ControlMode_t motor_get_control_mode(void);     /* 获取当前控制模式 */
-MCI_State_t motor_get_state(void);                 /* 获取电机状态 */
-MCI_CommandState_t motor_get_command_state(void);    /* 获取命令执行状态 */
+MCI_State_t motor_get_state(void);                 /* 获取ST SDK电机状态 */
+MCI_CommandState_t motor_get_command_state(void);   /* 获取命令执行状态 */
 PosCtrlStatus_t motor_get_position_control_status(void); /* 获取位置控制状态 */
 AlignStatus_t motor_get_alignment_status(void);      /* 获取对准状态 */
 

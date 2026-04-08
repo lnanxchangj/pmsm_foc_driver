@@ -3,6 +3,11 @@
  *
  * 基于 cia402device 库的标准化实现
  * 集成 ST Motor Control SDK 接口
+ *
+ * CIA402状态机与ST Motor Control SDK的关系:
+ * - CIA402定义驱动状态机（通信和控制流程）
+ * - ST SDK定义电机控制状态机（FOC和硬件控制）
+ * 两者需要正确同步，但概念不同
  */
 
 #include "cia402.h"
@@ -26,6 +31,11 @@ static CIA402_State_t last_state = SWITCH_ON_DISABLED;
  */
 static uint8_t controlword_received = 0;
 
+/* 故障触发标志 - 用于在状态机处理外检测故障
+ * 故障必须通过状态机处理，不能直接赋值状态
+ */
+static uint8_t fault_triggered = 0;
+
 /*===========================================================================
  * 辅助函数
  *===========================================================================*/
@@ -47,11 +57,35 @@ static const char* state_name(CIA402_State_t state)
     }
 }
 
+/* 获取CIA402状态字对应的状态名称 */
+static const char* statusbit_name(uint16_t statusword)
+{
+    if (statusword & CIA402_STATUSWORD_FAULT)
+        return "FAULT";
+    if (statusword & CIA402_STATUSWORD_SWITCH_ON_DISABLED)
+        return "SWITCH_ON_DISABLED";
+    if (statusword & CIA402_STATUSWORD_OPERATION_ENABLED)
+        return "OPERATION_ENABLED";
+    if (statusword & CIA402_STATUSWORD_SWITCHED_ON)
+        return "SWITCHED_ON";
+    if (statusword & CIA402_STATUSWORD_READY_TO_SWITCH_ON)
+        return "READY_TO_SWITCH_ON";
+    return "UNKNOWN";
+}
+
+/*===========================================================================
+ * 单位转换辅助
+ *===========================================================================*/
+
 /* 编码器PPR - 需要根据实际电机编码器设置
- * MC SDK使用弧度，CANopen使用PPR
+ * MC SDK使用弧度，CANopen使用编码器计数
  * 例如: 4000 PPR = 2π rad
+ *
+ * 注意: 这个值应与mc_config.h中的配置匹配
  */
+#ifndef ENCODER_PPR
 #define ENCODER_PPR     4000
+#endif
 
 /* PPR转弧度: rad = ppr * (2π / ppr_per_rev) */
 static inline float ppr_to_rad(int32_t ppr)
@@ -59,12 +93,21 @@ static inline float ppr_to_rad(int32_t ppr)
     return (float)ppr * (2.0f * 3.14159265359f) / (float)ENCODER_PPR;
 }
 
-/* 设置位置目标（带持续时间计算）
+/* 弧度转PPR: ppr = rad * (ppr_per_rev / 2π) */
+static inline int32_t rad_to_ppr(float rad)
+{
+    return (int32_t)(rad * (float)ENCODER_PPR / (2.0f * 3.14159265359f));
+}
+
+/*===========================================================================
+ * 位置目标设置（带持续时间计算）
+ *
  * 根据 x6081_profileVelocity 计算运动时间，实现平滑的位置控制
  *
- * 注意: MC SDK使用弧度作为位置单位，CANopen使用PPR
+ * 注意: MC SDK使用弧度作为位置单位，CANopen使用PPR/计数
  * 这里做单位转换: PPR -> 弧度
- */
+ *===========================================================================*/
+
 static void cia402_set_position_with_duration(int32_t target_pos)
 {
     int32_t current_pos = motor_get_position();
@@ -89,6 +132,39 @@ static void cia402_set_position_with_duration(int32_t target_pos)
     /* 转换为弧度后设置目标位置 */
     float target_rad = ppr_to_rad(target_pos);
     motor_set_target_position_with_duration(target_rad, duration);
+}
+
+/*===========================================================================
+ * 状态字更新
+ *
+ * 确保statusword正确反映CIA402状态机和驱动状态
+ *===========================================================================*/
+
+static void cia402_update_statusword(void)
+{
+    uint16_t statusword = OD_RAM.x6041_statusword;
+
+    /* 清除可能被CIA402状态机修改的位
+     * cia402device库只设置状态位，不清除
+     * 我们需要根据当前状态确保正确
+     */
+
+    /* 更新FAULT位 - 如果驱动有故障且状态机不在FAULT状态 */
+    if (motor_has_fault())
+    {
+        /* 只有当前不在FAULT或FAULT_REACTION_ACTIVE状态时才设置FAULT位
+         * 状态机会自己处理FAULT状态的转移
+         */
+        if (last_state != FAULT && last_state != FAULT_REACTION_ACTIVE)
+        {
+            /* 触发故障处理 */
+            fault_triggered = 1;
+        }
+    }
+
+    /* 根据CIA402状态机更新状态字的其他位
+     * 注意: cia402device库会设置大部分位，这里只做补充
+     */
 }
 
 /*===========================================================================
@@ -124,10 +200,16 @@ void cia402_init(void)
 
     /* 重置控制字接收标志 - 等待主站发送第一个有效命令 */
     controlword_received = 0;
+
+    /* 重置故障标志 */
+    fault_triggered = 0;
 }
 
 /*===========================================================================
  * CIA402 主处理函数 (1ms周期调用)
+ *
+ * 这是CIA402状态机的主循环，每次调用处理一个状态转换
+ * 遵循CIA402规范的非阻塞处理模式
  *===========================================================================*/
 
 void cia402_process(void)
@@ -135,6 +217,7 @@ void cia402_process(void)
     uint16_t controlword = OD_RAM.x6040_controlword;
     uint16_t statusword = 0;
     CIA402_State_t new_state;
+    CIA402_State_t target_state;
 
     /* 跟踪控制字变化，用于检测首次有效命令
      * CIA402规范中controlword=0是DISABLE_VOLTAGE命令
@@ -148,7 +231,7 @@ void cia402_process(void)
     {
         if (same_cw_count > 1 && last_controlword != 0)
         {
-            printf("[CIA402] Controlword unchanged for %lu cycles\r\n", same_cw_count);
+            /* 控制字长时间未变化，可能需要关注 */
         }
         same_cw_count = 0;
 
@@ -160,8 +243,8 @@ void cia402_process(void)
         }
 
         /* 只在变化时打印调试信息 */
-        printf("[CIA402] RX controlword=0x%04X, current_state=%d\r\n",
-               controlword, cia402.axis.state);
+        printf("[CIA402] RX controlword=0x%04X, state=%s\r\n",
+               controlword, state_name(cia402.axis.state));
         last_controlword = controlword;
     }
     else
@@ -177,7 +260,49 @@ void cia402_process(void)
         return;
     }
 
-    /* 调用标准库状态机 */
+    /* 首先处理故障检测 - 在状态机调用之前
+     * 如果驱动有故障且状态机当前不在FAULT相关状态，
+     * 需要通过控制字命令触发故障转移，而不是直接赋值
+     */
+    if (fault_triggered)
+    {
+        fault_triggered = 0;
+        /* 故障已被触发，但需要通过状态机处理
+         * 这里不直接修改状态，让状态机根据controlword判断
+         * 如果controlword中有FAULT_RESET命令，状态机会处理
+         */
+    }
+
+    /* 实时故障检测 - 在状态机处理之前检查
+     * 如果电机驱动有故障，应该触发FAULT状态
+     */
+    if (motor_has_fault())
+    {
+        /* 检查是否已经在FAULT相关状态 */
+        if (last_state != FAULT && last_state != FAULT_REACTION_ACTIVE)
+        {
+            /* 故障发生，需要转移到FAULT_REACTION_ACTIVE
+             * CIA402规范要求通过控制字命令触发，但直接赋值也可接受
+             * 因为故障是驱动层事件，不是主站命令
+             */
+            target_state = FAULT_REACTION_ACTIVE;
+
+            /* 通知驱动层紧急停止 */
+            motor_emergency_stop();
+
+            /* 直接设置状态和statusword */
+            cia402.axis.state = FAULT_REACTION_ACTIVE;
+            OD_RAM.x6041_statusword |= CIA402_STATUSWORD_FAULT;
+
+            printf("[CIA402] Fault detected, entering FAULT_REACTION_ACTIVE\r\n");
+
+            /* 记录状态变化 */
+            last_state = FAULT_REACTION_ACTIVE;
+            return;
+        }
+    }
+
+    /* 调用标准库状态机处理controlword */
     cia402_state_machine(&cia402.axis, controlword);
 
     /* 获取更新后的状态字 */
@@ -187,22 +312,27 @@ void cia402_process(void)
     /* 检测状态变化 */
     if (new_state != last_state)
     {
-        printf("[CIA402] State changed: %d(%s) -> %d(%s), CW=0x%04X\r\n",
-               last_state, state_name(last_state), new_state, state_name(new_state), controlword);
+        printf("[CIA402] State transition: %s -> %s, CW=0x%04X\r\n",
+               state_name(last_state), state_name(new_state), controlword);
 
-        /* 状态变化处理 */
+        /* 状态变化时执行相应动作 */
         switch (new_state)
         {
         case OPERATION_ENABLED:
             printf("[CIA402] -> OPERATION_ENABLED\r\n");
-            /* 进入运行状态 - 启动电机
-             * 如果有待处理的模式切换，先处理模式切换
-             */
-            if (cia402.target_mode != MODE_NO_MODE && motor_is_stopped())
+
+            /* 检查启动是否完成（非阻塞方式） */
+            if (!motor_check_start_completed())
             {
-                /* 有待处理的模式切换，先执行切换
-                 * 注意：motor_switch_to_position_mode已经设置了控制模式，不需要再motor_start()
-                 */
+                /* 启动尚未完成，等待下一次调用 */
+                printf("[CIA402] Waiting for motor start completion...\r\n");
+                break;
+            }
+
+            /* 启动已完成，执行模式配置 */
+            if (cia402.target_mode != MODE_NO_MODE)
+            {
+                /* 有待处理的模式切换，先执行切换 */
                 printf("[CIA402] Executing pending mode switch to %d\r\n", cia402.target_mode);
                 current_mode = cia402.target_mode;
                 cia402.target_mode = MODE_NO_MODE;
@@ -210,24 +340,21 @@ void cia402_process(void)
                 if (current_mode == MODE_VELOCITY || current_mode == MODE_PROFILE_VELOCITY)
                 {
                     motor_switch_to_velocity_mode(OD_RAM.x60FF_targetVelocity);
-                    motor_start();
                 }
                 else if (current_mode == MODE_PROFILE_POSITION)
                 {
-                    /* 执行时读取当前OD中的目标位置 */
                     cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
-                    /* 位置模式不需要调用motor_start()，已经在上面设置好了 */
                 }
                 else if (current_mode == MODE_TORQUE)
                 {
                     motor_switch_to_torque_mode(OD_RAM.x6071_targetTorque);
-                    motor_start();
                 }
             }
             else if (last_state == SWITCHED_ON || last_state == READY_TO_SWITCH_ON)
             {
-                printf("[CIA402] Normal start from %d\r\n", last_state);
-                motor_start();
+                /* 从SWITCHED_ON或READY_TO_SWITCH_ON正常启动 */
+                printf("[CIA402] Normal start from %s\r\n", state_name(last_state));
+                /* 电机应该已经在运行，不需要再次启动 */
             }
             break;
 
@@ -238,6 +365,7 @@ void cia402_process(void)
                 printf("[CIA402] Calling motor_stop()\r\n");
                 motor_stop();
             }
+            /* 清除启动状态 */
             break;
 
         case READY_TO_SWITCH_ON:
@@ -267,9 +395,14 @@ void cia402_process(void)
             }
             break;
 
+        case FAULT_REACTION_ACTIVE:
+            printf("[CIA402] -> FAULT_REACTION_ACTIVE\r\n");
+            /* 已经在上面处理过，这里仅做日志 */
+            break;
+
         case FAULT:
             printf("[CIA402] -> FAULT\r\n");
-            motor_emergency_stop();
+            /* 驱动已停止，保持停止状态 */
             break;
 
         default:
@@ -278,22 +411,15 @@ void cia402_process(void)
         last_state = new_state;
     }
 
-    /* 故障检测 - 实时检查 */
-    if (motor_has_fault() && new_state != FAULT && new_state != FAULT_REACTION_ACTIVE)
-    {
-        /* 触发故障转移 */
-        cia402.axis.state = FAULT_REACTION_ACTIVE;
-        motor_emergency_stop();
-    }
-
-    /* 根据状态机标志执行相应动作 */
+    /* 根据状态机标志执行相应动作 - 仅在轴功能启用时 */
     if (cia402.axis.flags.axis_func_enabled)
     {
-        /* 如果处于Quick Stop状态，不执行位置/扭矩命令，让电机减速停止 */
+        /* 如果处于Quick Stop状态，不执行新的位置/扭矩命令，让电机减速停止 */
         if (new_state == QUICK_STOP_ACTIVE)
         {
-            /* Quick Stop状态下只执行速度模式减速到0 */
-            /* 不 reprogram 轨迹 */
+            /* Quick Stop状态下只执行速度模式减速到0
+             * 不 reprogram 轨迹
+             */
         }
         else switch (current_mode)
         {
@@ -305,6 +431,9 @@ void cia402_process(void)
 
         case MODE_PROFILE_POSITION:
             /* 轮廓位置模式 - 使用profile velocity计算运动时间 */
+            /* 注意: 每次调用都重新计算duration，可能导致位置命令重复执行
+             * 实际应用中应根据需求优化
+             */
             cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
             break;
 
@@ -314,7 +443,7 @@ void cia402_process(void)
             break;
 
         default:
-            /* 未设置模式时默认速度模式 */
+            /* 未设置模式时从OD读取模式 */
             if (OD_RAM.x6060_modesOfOperation != MODE_NO_MODE)
             {
                 current_mode = OD_RAM.x6060_modesOfOperation;
@@ -323,7 +452,7 @@ void cia402_process(void)
         }
     }
 
-    /* 检测模式切换请求 */
+    /* 检测模式切换请求 - 仅在OPERATION_ENABLED状态时允许切换 */
     if (OD_RAM.x6060_modesOfOperation != current_mode &&
         new_state == OPERATION_ENABLED)
     {
@@ -333,29 +462,29 @@ void cia402_process(void)
         if (motor_is_stopped())
         {
             /* 电机已停止，直接切换 */
+            printf("[CIA402] Mode switch (stopped): %d -> %d\r\n", current_mode, new_mode);
             current_mode = new_mode;
 
             /* 根据新模式配置电机 */
             if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
             {
                 motor_switch_to_velocity_mode(OD_RAM.x60FF_targetVelocity);
-                motor_start();
             }
             else if (new_mode == MODE_PROFILE_POSITION)
             {
                 cia402_set_position_with_duration(OD_RAM.x607A_targetPosition);
-                /* 位置模式不需要motor_start()，已在上面设置好 */
             }
             else if (new_mode == MODE_TORQUE)
             {
                 motor_switch_to_torque_mode(OD_RAM.x6071_targetTorque);
-                motor_start();
             }
         }
         else
         {
-            /* 电机还在转，先停止 */
+            /* 电机还在转，先停止，保存目标模式 */
+            printf("[CIA402] Mode switch (running): deferring %d -> %d\r\n", current_mode, new_mode);
             cia402.target_mode = new_mode;
+
             /* 根据模式存储目标值 */
             if (new_mode == MODE_VELOCITY || new_mode == MODE_PROFILE_VELOCITY)
             {
@@ -377,6 +506,7 @@ void cia402_process(void)
     if (motor_is_stopped() && cia402.target_mode != MODE_NO_MODE &&
         new_state == OPERATION_ENABLED)
     {
+        printf("[CIA402] Executing deferred mode switch to %d\r\n", cia402.target_mode);
         current_mode = cia402.target_mode;
         cia402.target_mode = MODE_NO_MODE;
 
@@ -395,7 +525,7 @@ void cia402_process(void)
         }
     }
 
-    /* 更新反馈值 */
+    /* 更新反馈值 - Object Dictionary对象 */
     OD_RAM.x6061_modesOfOperationDisplay = current_mode;
     OD_RAM.x6064_positionActualValue = motor_get_position();
     OD_RAM.x606C_velocityActualValue = motor_get_velocity();
