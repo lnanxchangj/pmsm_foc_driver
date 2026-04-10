@@ -1,64 +1,103 @@
-/*
- * CIA402.h - CANopen CIA 402 State Machine
- *
- * CiA 402运动控制协议的状态机实现
- */
-
+/* CIA402.h */
 #ifndef CIA402_H
 #define CIA402_H
 
-#include <stdint.h>
-#include "motor_control_interface.h"
+#include "stdint.h"
+#include "stdbool.h"
 
-/* CIA 402 状态机状态 */
+/* ============================================================
+ * CiA 402 状态机状态定义
+ * ============================================================ */
 typedef enum {
-    STATE_NOT_READY_TO_SWITCH_ON = 0,
-    STATE_SWITCH_ON_DISABLED,
-    STATE_READY_TO_SWITCH_ON,
-    STATE_SWITCHED_ON,
-    STATE_OPERATION_ENABLED,
-    STATE_QUICK_STOP_ACTIVE,
-    STATE_FAULT_REACTION_ACTIVE,
-    STATE_FAULT
+    CIA402_NOT_READY_TO_SWITCH_ON = 0,  /* 上电初始化中 */
+    CIA402_SWITCH_ON_DISABLED,          /* 禁止合闸 (默认待机态) */
+    CIA402_READY_TO_SWITCH_ON,          /* 准备合闸 */
+    CIA402_SWITCHED_ON,                 /* 已合闸 */
+    CIA402_OPERATION_ENABLED,           /* 运行使能 (电机运转) */
+    CIA402_QUICK_STOP_ACTIVE,           /* 快速停止中 */
+    CIA402_FAULT_REACTION_ACTIVE,       /* 故障响应中 */
+    CIA402_FAULT                        /* 故障 */
 } CIA402_State_t;
 
-/* 控制字 (0x6040) 位定义 */
-#define CW_SWITCH_ON         (1<<0)   /* 0: 不能运行 1: 运行使能请求 */
-#define CW_ENABLE_VOLTAGE    (1<<1)   /* 0: 禁用电压 1: 使能电压 */
-#define CW_QUICK_STOP        (1<<2)   /* 0: 快速停止 1: 继续运行 */
-#define CW_ENABLE_OPERATION  (1<<3)   /* 0: 禁用运行 1: 使能运行 */
-#define CW_NEW_SETPOINT      (1<<4)   /* 新设定点 (PP模式) */
-#define CW_IMMEDIATE         (1<<5)   /* 立即更新 (PP模式) */
-#define CW_FAULT_RESET       (1<<7)   /* 故障复位 */
-#define CW_HALT              (1<<8)   /* 暂停 */
+/* ============================================================
+ * 操作模式定义 (0x6060)
+ * ============================================================ */
+typedef enum {
+    CIA402_MODE_NO_MODE  =  0,
+    CIA402_MODE_PP       =  1,   /* Profile Position     轮廓位置 */
+    CIA402_MODE_PV       =  3,   /* Profile Velocity     轮廓速度 */
+    CIA402_MODE_PT       =  4,   /* Profile Torque       轮廓转矩 */
+    CIA402_MODE_HM       =  6,   /* Homing               回零     */
+    CIA402_MODE_CSP      =  8,   /* Cyclic Sync Position 周期同步位置 */
+    CIA402_MODE_CSV      =  9,   /* Cyclic Sync Velocity 周期同步速度 */
+    CIA402_MODE_CST      = 10,   /* Cyclic Sync Torque   周期同步转矩 */
+} CIA402_ModeOfOperation_t;
 
-/* 状态字 (0x6041) 位定义 */
-#define SW_READY_TO_SWITCH_ON    (1<<0)  /* 准备就绪 */
-#define SW_SWITCHED_ON           (1<<1)  /* 已通电 */
-#define SW_OPERATION_ENABLED     (1<<2)  /* 运行使能 */
-#define SW_FAULT                 (1<<3)  /* 故障 */
-#define SW_VOLTAGE_ENABLED       (1<<4)  /* 电压使能 */
-#define SW_QUICK_STOP            (1<<5)  /* 快速停止 */
-#define SW_SWITCH_ON_DISABLED    (1<<6)  /* 开关断开 */
-#define SW_WARNING              (1<<7)  /* 警告 */
-#define SW_MANUFACTURER_SPECIFIC (1<<8) /* 制造商特定 */
-#define SW_REMOTE               (1<<9)  /* 远程 */
-#define SW_TARGET_REACHED        (1<<10) /* 目标到达 */
-#define SW_INTERNAL_LIMIT_ACTIVE (1<<11) /* 内部限制激活 */
+/* ============================================================
+ * 控制字 Bit 定义 (0x6040)
+ * ============================================================ */
+#define CW_SWITCH_ON          (1u << 0)   /* 合闸       */
+#define CW_ENABLE_VOLTAGE     (1u << 1)   /* 使能电压   */
+#define CW_QUICK_STOP         (1u << 2)   /* 快速停止 (0=触发) */
+#define CW_ENABLE_OPERATION   (1u << 3)   /* 使能运行   */
+#define CW_NEW_SETPOINT       (1u << 4)   /* PP模式新目标点 */
+#define CW_CHANGE_SET_IMMED   (1u << 5)   /* PP模式立即更新 */
+#define CW_ABS_REL            (1u << 6)   /* PP模式绝对/相对 */
+#define CW_FAULT_RESET        (1u << 7)   /* 故障复位   */
+#define CW_HALT               (1u << 8)   /* 暂停       */
 
-/* 运行模式 */
-#define MODE_NO_MODE         0
-#define MODE_PROFILE_POSITION 1
-#define MODE_VELOCITY        2
-#define MODE_PROFILE_VELOCITY 3
-#define MODE_TORQUE          4
-#define MODE_HOMING          6
-#define MODE_INTERPOLATED    7
+/* ============================================================
+ * 状态字 Bit 定义 (0x6041)
+ * ============================================================ */
+#define SW_READY_TO_SWITCH_ON (1u << 0)
+#define SW_SWITCHED_ON        (1u << 1)
+#define SW_OPERATION_ENABLED  (1u << 2)
+#define SW_FAULT              (1u << 3)
+#define SW_VOLTAGE_ENABLED    (1u << 4)
+#define SW_QUICK_STOP         (1u << 5)   /* 1=正常, 0=快速停止激活 */
+#define SW_SWITCH_ON_DISABLED (1u << 6)
+#define SW_WARNING            (1u << 7)
+#define SW_REMOTE             (1u << 9)
+#define SW_TARGET_REACHED     (1u << 10)
+#define SW_INTERNAL_LIMIT     (1u << 11)
+#define SW_SETPOINT_ACK       (1u << 12)  /* PP模式应答 */
 
-/* 函数声明 */
-void cia402_init(void);
-void cia402_process(void);  /* 1ms周期调用 */
+/* ============================================================
+ * 状态字掩码 (低7位表示状态)
+ * ============================================================ */
+#define SW_STATE_MASK                    0x006Fu
 
-CIA402_State_t cia402_get_state(void);
+/* 各状态对应的状态字低位模式
+ * bit5 (SW_QUICK_STOP): 1=normal/not-in-quick-stop, 0=quick-stop-active or fault
+ * CiA 402 DS: bit5=1 在所有非 QSA/FAULT/FAULT_REACTION 状态下
+ */
+#define SW_NOT_READY_TO_SWITCH_ON_VAL    0x0000u  /* bit5=1 */
+#define SW_SWITCH_ON_DISABLED_VAL        0x0060u  /* bit6=1, bit5=1 */
+#define SW_READY_TO_SWITCH_ON_VAL        0x0021u  /* bit5=1, bit0=1 */
+#define SW_SWITCHED_ON_VAL               0x0023u  /* bit5=1, bit1=1, bit0=1 */
+#define SW_OPERATION_ENABLED_VAL         0x0027u  /* bit5=1, bit2=1, bit1=1, bit0=1 */
+#define SW_QUICK_STOP_ACTIVE_VAL         0x0007u  /* bit5=0, bit2=1, bit1=1, bit0=1 */
+#define SW_FAULT_REACTION_ACTIVE_VAL     0x002Fu  /* bit5=1, bit3=1, bit2=1, bit1=1, bit0=1 */
+#define SW_FAULT_VAL                     0x0008u  /* bit5=0, bit3=1 */
+
+/* ============================================================
+ * 速度单位换算
+ * MCSDK 内部: rpm (float)
+ * CIA402 0x60FF: 用户自定义，此处约定 = 0.001 rpm (int32)
+ * 即: rpm = targetVelocity / 1000.0f
+ * ============================================================ */
+#define CIA402_VEL_SCALE    1000.0f    /* int → rpm 的除数 */
+
+/* 转矩单位: 0x6071/6077 单位为额定转矩的 0.1%，即 1000 = 100% */
+#define CIA402_TRQ_SCALE    1000.0f    /* int → 标幺值的除数 */
+
+/* 位置单位: 0x6064/607A 单位为用户增量，此处约定 1 inc = 0.001 rad */
+#define CIA402_POS_SCALE    1000.0f    /* int → rad 的除数 */
+
+/* ============================================================
+ * 公共接口
+ * ============================================================ */
+void CIA402_Init(void);
+void CIA402_Process(void);          /* 放入 1ms 周期任务中调用 */
 
 #endif /* CIA402_H */

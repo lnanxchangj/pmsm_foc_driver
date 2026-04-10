@@ -32,8 +32,8 @@
 
 #include "CO_storageBlank.h"
 #include "OD.h"
-#include "cia402.h"
-#include "motor_control_interface.h"
+
+#include "CIA402.h"
 
 CANopenNodeSTM32*
     canopenNodeSTM32; // It will be set by canopen_app_init and will be used across app to get access to CANOpen objects
@@ -110,11 +110,7 @@ canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
 #endif
 
     canopen_app_resetCommunication();
-
-    /* Initialize CIA402 state machine and motor control interface */
-    motor_control_interface_init();
-    cia402_init();
-
+    CIA402_Init();
     return 0;
 }
 
@@ -218,10 +214,7 @@ canopen_app_process() {
         uint32_t timeDifference_us = (time_current - time_old) * 1000;
         time_old = time_current;
         reset_status = CO_process(CO, false, timeDifference_us, NULL);
-
-        /* CIA402 state machine processing */
-        cia402_process();
-
+        CIA402_Process();
         canopenNodeSTM32->outStatusLEDRed = CO_LED_RED(CO->LEDs, CO_LED_CANopen);
         canopenNodeSTM32->outStatusLEDGreen = CO_LED_GREEN(CO->LEDs, CO_LED_CANopen);
 
