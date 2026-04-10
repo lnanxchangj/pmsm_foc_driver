@@ -91,8 +91,12 @@ typedef enum {
 /* 转矩单位: 0x6071/6077 单位为额定转矩的 0.1%，即 1000 = 100% */
 #define CIA402_TRQ_SCALE    1000.0f    /* int → 标幺值的除数 */
 
-/* 位置单位: 0x6064/607A 单位为用户增量，此处约定 1 inc = 0.001 rad */
-#define CIA402_POS_SCALE    1000.0f    /* int → rad 的除数 */
+/* 位置单位: 0x6064/607A 单位为编码器增量 (encoder counts)
+ * 编码器 1000 PPR × 4倍频 = 4000 counts/圈
+ * 4000 counts = 2π rad → scale = 4000 / (2π)
+ */
+#define ENCODER_COUNTS_PER_REV  4000.0f
+#define CIA402_POS_SCALE        (ENCODER_COUNTS_PER_REV / (2.0f * 3.14159265f))  /* ≈636.62 */
 
 /* ============================================================
  * 公共接口
