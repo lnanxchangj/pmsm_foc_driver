@@ -110,22 +110,26 @@ int main(void)
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
   /* CANopen initialization */
-  canOpenNodeSTM32.CANHandle = &hcan1;
-  canOpenNodeSTM32.HWInitFunction = MX_CAN1_Init;
-  canOpenNodeSTM32.timerHandle = &htim14;
-  canOpenNodeSTM32.desiredNodeID = 0x10; /* Node ID = 16 */
-  canOpenNodeSTM32.baudrate = 500;       /* 500Kbps */
-  canopen_app_init(&canOpenNodeSTM32);
+//  canOpenNodeSTM32.CANHandle = &hcan1;
+//  canOpenNodeSTM32.HWInitFunction = MX_CAN1_Init;
+//  canOpenNodeSTM32.timerHandle = &htim14;
+//  canOpenNodeSTM32.desiredNodeID = 0x10; /* Node ID = 16 */
+//  canOpenNodeSTM32.baudrate = 500;       /* 500Kbps */
+//  canopen_app_init(&canOpenNodeSTM32);
 
-  // MC_StartMotor1();
+  MC_StartMotor1();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    canopen_app_process();
-    HAL_Delay(1);
+//    canopen_app_process();
+//    HAL_Delay(1);
+		MC_ProgramPositionCommandMotor1( PI * 2, 0.5 );               /* h?????? */
+        HAL_Delay(3000);
+        MC_ProgramPositionCommandMotor1( PI * 4, 0.5 );               /* 2?????? */
+        HAL_Delay(3000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
