@@ -1,5 +1,5 @@
 {
-  "version": 16,
+  "version": 8,
   "algorithm": "FOC",
   "description": "",
   "workBenchVersion": "6.4.2",
@@ -915,15 +915,15 @@
         "description": "",
         "polePairs": "Number.NaN",
         "mmsType": "",
-        "rs": "Number.NaN",
-        "ls": "Number.NaN",
+        "rs": 0.35,
+        "ls": 0.64,
         "mmsLd_lq_ratio": "Number.NaN",
         "maxCurrent": "Number.NaN",
         "maxDCVoltage": "Number.NaN",
         "BEmfConstant": "Number.NaN",
-        "inertia": "Number.NaN",
+        "inertia": 4,
         "friction": "Number.NaN",
-        "maxRatedSpeed": 6000,
+        "maxRatedSpeed": 5000,
         "hasHallSensor": true,
         "hallSensor": {
           "sensorsDisplacement": "Number.NaN",
@@ -931,9 +931,11 @@
         },
         "hasQuadratureEncoder": true,
         "quadratureEncoder": {
-          "pulsesPerMechanicalRevolution": "Number.NaN",
+          "pulsesPerMechanicalRevolution": 2000,
           "hasIndexPin": true
-        }
+        },
+        "nominalCurrent": "Number.NaN",
+        "nominalDCVoltage": "Number.NaN"
       }
     }
   }
