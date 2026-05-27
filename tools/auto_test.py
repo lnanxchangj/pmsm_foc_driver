@@ -11,7 +11,7 @@ import can
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-NODE_ID = 0x10
+NODE_ID = 0x01
 RPDO1_ID = 0x200 + NODE_ID  # 0x210
 TPDO1_ID = 0x180 + NODE_ID  # 0x190
 SDO_TX_ID = 0x600 + NODE_ID # 0x610
