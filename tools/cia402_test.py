@@ -173,8 +173,8 @@ def sdo_read(index, subindex=0, timeout_ms=2000):
 
             # Expedited upload response: CCS=2, S=1, E=1
             if (cmd & 0xE0) == 0x40:  # SCS=2 (upload response)
-                s = (cmd >> 4) & 1
-                e = (cmd >> 3) & 1
+                s = cmd & 1
+                e = (cmd >> 1) & 1
                 if s and e:
                     n = (cmd >> 2) & 3  # bytes not used
                     raw = msg.data[4:8]
@@ -248,7 +248,7 @@ def decode_state(sw):
     """Decode statusword into human-readable state name."""
     if (sw & 0x006F) == 0x0000:
         return "NOT_READY_TO_SWITCH_ON"
-    elif (sw & 0x006F) == 0x0040:
+    elif (sw & 0x006F) == 0x0060:
         return "SWITCH_ON_DISABLED"
     elif (sw & 0x006F) == 0x0021:
         return "READY_TO_SWITCH_ON"
@@ -258,7 +258,7 @@ def decode_state(sw):
         return "OPERATION_ENABLED"
     elif (sw & 0x006F) == 0x0007:
         return "QUICK_STOP_ACTIVE"
-    elif (sw & 0x006F) == 0x000F:
+    elif (sw & 0x006F) == 0x002F:
         return "FAULT_REACTION_ACTIVE"
     elif (sw & 0x006F) == 0x0008:
         return "FAULT"

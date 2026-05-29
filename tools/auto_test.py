@@ -44,8 +44,10 @@ def can_recv_match(cob_id, timeout_ms):
     while time.time() < deadline:
         remaining = max(0, deadline - time.time())
         msg = bus.recv(timeout=remaining)
-        if msg and msg.arbitration_id == cob_id:
-            return msg
+        if msg:
+            print(f"  [DEBUG RX] ID: 0x{msg.arbitration_id:X} Data: {[hex(x) for x in msg.data]}")
+            if msg.arbitration_id == cob_id:
+                return msg
     return None
 
 
@@ -64,8 +66,8 @@ def sdo_read(index, subindex=0, timeout_ms=2000):
         abort = struct.unpack_from("<I", msg.data, 4)[0]
         return ("ABORT", abort)
     if (cmd & 0xE0) == 0x40:
-        s = (cmd >> 4) & 1
-        e = (cmd >> 3) & 1
+        s = cmd & 1
+        e = (cmd >> 1) & 1
         if s and e:
             n = (cmd >> 2) & 3
             valid = 4 - n
@@ -114,9 +116,9 @@ def recv_tpdo1(timeout_ms=2000):
 def decode_state(sw):
     mask = sw & 0x006F
     states = {
-        0x0000: "NOT_READY", 0x0040: "SOD", 0x0021: "RTSO",
+        0x0000: "NOT_READY", 0x0060: "SOD", 0x0021: "RTSO",
         0x0023: "SO", 0x0027: "OE", 0x0007: "QSA",
-        0x000F: "FRA", 0x0008: "FAULT"
+        0x002F: "FRA", 0x0008: "FAULT"
     }
     return states.get(mask, f"?0x{mask:04X}")
 

@@ -44,7 +44,7 @@ The `tools/` directory contains scripts for automated testing over the CAN bus.
 ## Development Conventions
 
 - **Coding Standard:** Follows STMicroelectronics MCSDK and HAL coding conventions (primarily MISRA C:2012 compliant where applicable).
-- **Communication:** CANopen Node ID is defaulted to `0x10` (16) and baudrate to `500 Kbps` (configurable in `main.c`).
+- **Communication:** CANopen Node ID is defaulted to `0x01` (1) and baudrate to `500 Kbps` (configurable in `main.c`).
 - **Motor Control:** Always use the `mc_api.h` functions to interact with the motor to ensure the internal state machine remains synchronized.
 - **Safety:** The `cia402.c` implementation includes fault reaction states. Ensure hardware-level protections (over-current, over-voltage) are correctly configured in MCSDK.
 

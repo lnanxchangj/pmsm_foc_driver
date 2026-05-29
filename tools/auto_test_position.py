@@ -12,7 +12,7 @@ import can
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-NODE_ID = 0x10
+NODE_ID = 0x01
 RPDO1_ID = 0x200 + NODE_ID  # 0x210
 TPDO1_ID = 0x180 + NODE_ID  # 0x190
 SDO_TX_ID = 0x600 + NODE_ID # 0x610
@@ -69,8 +69,8 @@ def sdo_read(index, subindex=0, timeout_ms=2000):
         abort = struct.unpack_from("<I", msg.data, 4)[0]
         return ("ABORT", abort)
     if (cmd & 0xE0) == 0x40:
-        s = (cmd >> 4) & 1
-        e = (cmd >> 3) & 1
+        s = cmd & 1
+        e = (cmd >> 1) & 1
         if s and e:
             n = (cmd >> 2) & 3
             valid = 4 - n
@@ -110,9 +110,9 @@ def send_rpdo1(cw, vel=0):
 def decode_state(sw):
     mask = sw & 0x006F
     states = {
-        0x0000: "NOT_READY", 0x0040: "SOD", 0x0021: "RTSO",
+        0x0000: "NOT_READY", 0x0060: "SOD", 0x0021: "RTSO",
         0x0023: "SO", 0x0027: "OE", 0x0007: "QSA",
-        0x000F: "FRA", 0x0008: "FAULT"
+        0x002F: "FRA", 0x0008: "FAULT"
     }
     return states.get(mask, f"?0x{mask:04X}")
 
