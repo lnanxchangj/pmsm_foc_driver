@@ -65,6 +65,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(Start_Stop_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : M1_ENCODER_Z_Pin */
+  GPIO_InitStruct.Pin = M1_ENCODER_Z_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(M1_ENCODER_Z_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : M1_EN_DRIVER_Pin */
   GPIO_InitStruct.Pin = M1_EN_DRIVER_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;

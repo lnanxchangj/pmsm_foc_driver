@@ -118,7 +118,7 @@
 #define TOFF                                (uint16_t)((TOFF_NS * ADV_TIM_CLK_MHz) / 2000)
 
 #define M1_CHARGE_BOOT_CAP_TICKS          (((uint16_t)SYS_TICK_FREQUENCY * (uint16_t)10) / 1000U)
-#define M1_CHARGE_BOOT_CAP_DUTY_CYCLES ((uint32_t)0.000\
+#define M1_CHARGE_BOOT_CAP_DUTY_CYCLES ((uint32_t)0.400\
                                       * ((uint32_t)PWM_PERIOD_CYCLES / 2U))
 #define M2_CHARGE_BOOT_CAP_TICKS         (((uint16_t)SYS_TICK_FREQUENCY * (uint16_t)10) / 1000U)
 #define M2_CHARGE_BOOT_CAP_DUTY_CYCLES ((uint32_t)0\

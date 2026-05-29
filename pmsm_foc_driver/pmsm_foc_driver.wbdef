@@ -33,7 +33,9 @@
         <define key="ENC_ICx_FILTER" value="126" />
         <define key="ENC_INVERT_SPEED" value="DISABLE" />
         <define key="ENC_TIMER_SELECTION" value="ENC_TIM3" />
-        <define key="ENC_USE_CH3" value="FALSE" />
+        <define key="ENC_USE_CH3" value="TRUE" />
+        <define key="ENC_Z_GPIO_PIN" value="GPIO_Pin_6" />
+        <define key="ENC_Z_GPIO_PORT" value="GPIOE" />
         <define key="ENCODER" value="TRUE" />
         <define key="ENCODER_AVAILABLE" value="TRUE" />
         <define key="ENCODER_PPR" value="2000" />
@@ -60,7 +62,7 @@
         <define key="M1_COMMUTATION_STEP_TIME_BUF_SIZE" value="12" />
         <define key="M1_CONSTANT1_D" value="175690" />
         <define key="M1_CONSTANT1_Q" value="175690" />
-        <define key="M1_CONSTANT2_QD" value="14350" />
+        <define key="M1_CONSTANT2_QD" value="9972" />
         <define key="M1_CS_ADC_NUM" value="2" />
         <define key="M1_CS_ADC_PHASE_SHARED" value="V" />
         <define key="M1_CS_ADC_U" value="ADC1" />
@@ -76,7 +78,7 @@
         <define key="M1_DC_CURRENT_RS_MEAS" value="10" />
         <define key="M1_DEFAULT_CONTROL_MODE" value="STC_SPEED_MODE" />
         <define key="M1_DEFAULT_FLUX_COMPONENT" value="0" />
-        <define key="M1_DEFAULT_TARGET_SPEED_RPM" value="1440" />
+        <define key="M1_DEFAULT_TARGET_SPEED_RPM" value="3000" />
         <define key="M1_DEFAULT_TORQUE_COMPONENT" value="0" />
         <define key="M1_DISCONTINUOUS_PWM" value="FALSE" />
         <define key="M1_DP_TOPOLOGY" value="NONE" />
@@ -89,10 +91,13 @@
         <define key="M1_ENC_ICx_FILTER" value="126" />
         <define key="M1_ENC_TIMER_IRQ" value="TIM3" />
         <define key="M1_ENC_TIMER_SELECTION" value="ENC_TIM3" />
-        <define key="M1_ENC_USE_CH3" value="FALSE" />
+        <define key="M1_ENC_USE_CH3" value="TRUE" />
+        <define key="M1_ENC_Z_GPIO_IRQ" value="EXTI9_5" />
+        <define key="M1_ENC_Z_GPIO_PIN" value="GPIO_Pin_6" />
+        <define key="M1_ENC_Z_GPIO_PORT" value="GPIOE" />
         <define key="M1_ENCODER_PPR" value="2000" />
         <define key="M1_FEED_FORWARD_CURRENT_REG_ENABLING" value="DISABLE" />
-        <define key="M1_FINAL_I_ALIGNMENT" value="10" />
+        <define key="M1_FINAL_I_ALIGNMENT" value="4" />
         <define key="M1_FLUX_WEAKENING_ENABLING" value="DISABLE" />
         <define key="M1_FW_KI_GAIN" value="5000" />
         <define key="M1_FW_KIDIV" value="32768" />
@@ -115,8 +120,8 @@
         <define key="M1_MIN_APPLICATION_SPEED" value="0" />
         <define key="M1_MOTOR_MAX_SPEED_RPM" value="5000" />
         <define key="M1_MOTOR_NAME" value="42JSF840AS-1000-8" />
-        <define key="M1_MOTOR_RATED_FLUX" value="0.036129974" />
-        <define key="M1_MOTOR_VOLTAGE_CONSTANT" value="3.0" />
+        <define key="M1_MOTOR_RATED_FLUX" value="0.02510727" />
+        <define key="M1_MOTOR_VOLTAGE_CONSTANT" value="2.1" />
         <define key="M1_MTPA_ENABLING" value="DISABLE" />
         <define key="M1_NOMINAL_BUS_VOLTAGE_V" value="24" />
         <define key="M1_NOMINAL_CURRENT" value="10" />
@@ -128,26 +133,26 @@
         <define key="M1_OVERMODULATION" value="FALSE" />
         <define key="M1_OVP_THRESHOLD_HIGH" value="28.8" />
         <define key="M1_PID_FLUX_KD_DEFAULT" value="100" />
-        <define key="M1_PID_FLUX_KI_DEFAULT" value="2464" />
+        <define key="M1_PID_FLUX_KI_DEFAULT" value="616" />
         <define key="M1_PID_FLUX_KP_DEFAULT" value="2253" />
         <define key="M1_PID_SPEED_KD_DEFAULT" value="0" />
-        <define key="M1_PID_SPEED_KI_DEFAULT" value="5800" />
-        <define key="M1_PID_SPEED_KP_DEFAULT" value="30000" />
+        <define key="M1_PID_SPEED_KI_DEFAULT" value="3" />
+        <define key="M1_PID_SPEED_KP_DEFAULT" value="2613" />
         <define key="M1_PID_TORQUE_KD_DEFAULT" value="100" />
-        <define key="M1_PID_TORQUE_KI_DEFAULT" value="2464" />
+        <define key="M1_PID_TORQUE_KI_DEFAULT" value="616" />
         <define key="M1_PID_TORQUE_KP_DEFAULT" value="2253" />
         <define key="M1_POLE_PAIR_NUM" value="4" />
         <define key="M1_POSITION_CTRL_ENABLING" value="ENABLE" />
-        <define key="M1_POSITION_CTRL_KD_GAIN" value="500" />
+        <define key="M1_POSITION_CTRL_KD_GAIN" value="1000" />
         <define key="M1_POSITION_CTRL_KDDIV" value="16" />
-        <define key="M1_POSITION_CTRL_KI_GAIN" value="500" />
+        <define key="M1_POSITION_CTRL_KI_GAIN" value="1000" />
         <define key="M1_POSITION_CTRL_KIDIV" value="32768" />
-        <define key="M1_POSITION_CTRL_KP_GAIN" value="1000" />
+        <define key="M1_POSITION_CTRL_KP_GAIN" value="10000" />
         <define key="M1_POSITION_CTRL_KPDIV" value="1024" />
         <define key="M1_POSITION_LOOP_FREQUENCY_HZ" value="1000" />
         <define key="M1_POTENTIOMETER_ENABLE" value="FALSE" />
         <define key="M1_POWERBOARD_NAME" value="DMF407_M1" />
-        <define key="M1_PWM_CHARGE_BOOT_CAP_DUTY_CYCLES" value="0.000" />
+        <define key="M1_PWM_CHARGE_BOOT_CAP_DUTY_CYCLES" value="0.400" />
         <define key="M1_PWM_CHARGE_BOOT_CAP_MS" value="10" />
         <define key="M1_PWM_DRIVER_PN" value="1.0" />
         <define key="M1_PWM_FREQUENCY" value="16000" />
@@ -163,13 +168,13 @@
         <define key="M1_SP_KIDIV" value="16384" />
         <define key="M1_SP_KPDIV" value="2048" />
         <define key="M1_SPD_DIFFERENTIAL_TERM_ENABLING" value="DISABLE" />
-        <define key="M1_SPEED_SENSOR" value="QUAD_ENCODER" />
+        <define key="M1_SPEED_SENSOR" value="QUAD_ENCODER_Z" />
         <define key="M1_SS_MEAS_ERRORS_BEFORE_FAULTS" value="3" />
         <define key="M1_SW_DEADTIME_NS" value="200" />
         <define key="M1_TEMPERATURE_READING" value="DISABLE" />
         <define key="M1_TF_KDDIV" value="8192" />
         <define key="M1_TF_KIDIV" value="16384" />
-        <define key="M1_TF_KPDIV" value="512" />
+        <define key="M1_TF_KPDIV" value="2048" />
         <define key="M1_TNOISE_NS" value="30" />
         <define key="M1_TRISE_NS" value="2550" />
         <define key="M1_UD_VOLTAGE_THRESHOLD_V" value="10.0" />
@@ -289,13 +294,13 @@
         <define key="WB_MX_HEAPSIZE" value="0x200" />
         <define key="WB_MX_STACKSIZE" value="0x400" />
         <define key="WB_MX_TRUSTZONE_AVAILABLE" value="FALSE" />
-        <define key="WB_UI_CUTOFF_FREQUENCY" value="6000" />
+        <define key="WB_UI_CUTOFF_FREQUENCY" value="1500" />
         <define key="WB_UI_ENCODER_HAS_INDEX_PIN" value="TRUE" />
         <define key="WB_UI_FLUX_TARGET" value="0" />
         <define key="WB_UI_FRICTION" value="0.49" />
         <define key="WB_UI_INERTIA" value="4" />
         <define key="WB_UI_MAGNETIC_STRUCTURE" value="SM-PMSM" />
-        <define key="WB_UI_MAX_CURRENT" value="13.5" />
+        <define key="WB_UI_MAX_CURRENT" value="10" />
         <define key="WB_UI_MAX_NOMINAL_DC_VOLTAGE" value="24" />
         <define key="WB_UI_MAX_PWMFREQUENCY" value="50000" />
         <define key="WB_UI_MOTOR_DESCRIPTION" value="new motor" />
