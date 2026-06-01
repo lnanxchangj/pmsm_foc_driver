@@ -37,7 +37,8 @@
 
 #define NOMINAL_CURRENT                     (NOMINAL_CURRENT_A * CURRENT_CONV_FACTOR)
 #define ADC_REFERENCE_VOLTAGE               3.3
-#define M1_MAX_READABLE_CURRENT  (ADC_REFERENCE_VOLTAGE / (2 * RSHUNT * AMPLIFICATION_GAIN))
+#define AMPLIFIER_BIAS_VOLTAGE              1.25
+#define M1_MAX_READABLE_CURRENT             (AMPLIFIER_BIAS_VOLTAGE / (RSHUNT * AMPLIFICATION_GAIN))
 
 /************************* CONTROL FREQUENCIES & DELAIES **********************/
 #define TF_REGULATION_RATE                  (uint32_t)((uint32_t)(PWM_FREQUENCY) / (REGULATION_EXECUTION_RATE))
@@ -190,7 +191,7 @@
 #define LPF_FILT_CONST                      ((int16_t)(32767 * 0.5))
 
 /* MMI Table Motor 1 MAX_MODULATION_96_PER_CENT */
-#define MAX_MODULE                          (uint16_t)((96* 32767)/100)
+#define MAX_MODULE                          (uint16_t)((85* 32767)/100)
 
 #define  SAMPLING_CYCLE_CORRECTION          0 /* STM32F407IGTx ADC sampling time is an integer number */
 

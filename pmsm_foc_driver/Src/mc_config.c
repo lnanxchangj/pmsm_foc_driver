@@ -193,9 +193,9 @@ PWMC_R3_2_Handle_t PWM_Handle_M1 =
   },
 
   .Half_PWMPeriod               = PWM_PERIOD_CYCLES/2u,
-  .PhaseAOffset                 = 32767,
-  .PhaseBOffset                 = 32767,
-  .PhaseCOffset                 = 32767,
+  .PhaseAOffset                 = 24824, /* 1.25V / 3.3V * 65535 */
+  .PhaseBOffset                 = 24824,
+  .PhaseCOffset                 = 24824,
   .pParams_str                  = &R3_2_ParamsM1
 };
 

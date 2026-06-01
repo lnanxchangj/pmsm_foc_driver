@@ -542,6 +542,10 @@ void CIA402_Process(void)
     CIA402_UpdateModeSpecificStatus(&sw);
     OD_RAM.x6041_statusword = sw;
 
-    /* 4. 保存本周期控制字供下周期边沿检测 */
+    /* 4. 更新调试镜像 */
+    OD_RAM.x2001_controlwordMirror = OD_RAM.x6040_controlword;
+    OD_RAM.x2002_statuswordMirror  = OD_RAM.x6041_statusword;
+
+    /* 5. 保存本周期控制字供下周期边沿检测 */
     s_cw_prev = OD_RAM.x6040_controlword;
 }
