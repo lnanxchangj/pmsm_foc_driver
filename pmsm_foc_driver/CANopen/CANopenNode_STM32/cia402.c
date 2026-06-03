@@ -15,6 +15,8 @@ static uint16_t        s_cw_prev     = 0u;   /* 上一周期控制字，用于�
 static bool            s_pp_setpoint_pending = false; /* PP模式新目标点待处理 */
 static int32_t         s_last_target_vel = 0; /* 上一周期目标速度，用于PV/CSV边沿检测 */
 static int32_t         s_last_target_pos = 0; /* 上一周期目标位置，用于检测x607A变化 */
+static int32_t         s_target_pos_inc  = 0;   /* 绝对目标位置 (increments)，用于状态位判断 */
+static float_t         s_target_pos_abs  = 0.0f; /* 绝对目标位置 (rad)，用于 MC 指令 */
 static uint32_t        s_fault_reaction_tick = 0; /* FAULT_REACTION进入时刻 */
 
 /* 支持的操作模式位掩码 */
@@ -104,18 +106,19 @@ static void CIA402_UpdateModeSpecificStatus(uint16_t *sw)
         case CIA402_MODE_PP:
         case CIA402_MODE_CSP:
         {
-            /* 位置模式：实际位置与目标位置接近则 Target Reached */
-            float_t actual_pos = MC_GetCurrentPosition1();
-            float_t target_pos = (float_t)OD_RAM.x607A_targetPosition / CIA402_POS_SCALE;
-            float_t diff       = actual_pos - target_pos;
-            if (diff < 0.0f) diff = -diff;
-            if (diff < 0.01f) /* 0.01 rad 容差 */
+            /* 位置模式：结合整数容差 (5 counts) 判断 Target Reached */
+            int32_t act_pos_inc = OD_RAM.x6064_positionActualValue;
+            int32_t diff_inc    = act_pos_inc - s_target_pos_inc;
+            if (diff_inc < 0) diff_inc = -diff_inc;
+
+            if (diff_inc <= 5 || 
+                MC_GetControlPositionStatusMotor1() == TC_TARGET_POSITION_REACHED)
             {
                 *sw |= SW_TARGET_REACHED;
             }
 
-            /* PP 模式：Setpoint acknowledge (应答新目标点已被接受) */
-            if (!s_pp_setpoint_pending)
+            /* PP 模式：Setpoint acknowledge */
+            if (s_pp_setpoint_pending)
             {
                 *sw |= SW_SETPOINT_ACK;
             }
@@ -259,36 +262,54 @@ static void CIA402_ExecuteModeCommand(void)
         /* ---- 轮廓位置模式 PP ---- */
         case CIA402_MODE_PP:
         {
-            /* 检测 x607A 变化：SDO 写入 x607A 时，s_last_target_pos 不变
-             * 但 CIA402_Process 每周期运行，所以能检测到变化并触发位置命令 */
-            int32_t cur_target_pos = OD_RAM.x607A_targetPosition;
-            if (cur_target_pos != s_last_target_pos)
-            {
-                float_t target_pos = (float_t)cur_target_pos / CIA402_POS_SCALE;
-                float_t cur_pos = MC_GetCurrentPosition1();
+            /* 标准 CiA 402 PP 握手：检测 New Setpoint (bit 4) 上升沿 */
+            bool new_setpoint = (cw & CW_NEW_SETPOINT) != 0u;
+            bool last_setpoint = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
 
-                /* 绝对/相对位置处理 */
+            if (new_setpoint && !last_setpoint)
+            {
+                /* 触发新移动 */
+                int32_t target_val_inc = OD_RAM.x607A_targetPosition;
+                int32_t cur_pos_inc    = OD_RAM.x6064_positionActualValue;
+
+                /* 绝对/相对位置处理：在整数域完成 */
                 if ((cw & CW_ABS_REL) != 0u)
                 {
-                    /* 相对模式：目标位置 = 当前位置 + 设定值 */
-                    target_pos += cur_pos;
+                    /* 相对模式：目标 = 当前 + 偏移 */
+                    s_target_pos_inc = cur_pos_inc + target_val_inc;
+                }
+                else
+                {
+                    /* 绝对模式 */
+                    s_target_pos_inc = target_val_inc;
                 }
 
-                printf("[CIA402] PP CMD: target_pos=%.2f rad, cur_pos=%.4f rad, raw_x607A=%d\r\n",
-                       target_pos, cur_pos, cur_target_pos);
-                MC_ProgramPositionCommandMotor1(target_pos, 1.0f);
-                s_last_target_pos = cur_target_pos;
+                /* 转换为 Rad 用于 MC 指令 */
+                s_target_pos_abs = (float_t)s_target_pos_inc / CIA402_POS_SCALE;
+
+                /* 根据 Profile Velocity (0x6081) 计算持续时间 */
+                float_t velocity_rpm = (float_t)OD_RAM.x6081_profileVelocity / CIA402_VEL_SCALE;
+                if (velocity_rpm < 1.0f) velocity_rpm = 100.0f; /* 默认 100 RPM */
+                
+                float_t cur_pos_rad = MC_GetCurrentPosition1();
+                float_t distance_rad = s_target_pos_abs - cur_pos_rad;
+                if (distance_rad < 0) distance_rad = -distance_rad;
+                
+                float_t velocity_rads = (velocity_rpm * 2.0f * 3.14159f) / 60.0f;
+                float_t duration = distance_rad / velocity_rads;
+                if (duration < 0.01f) duration = 0.01f;
+
+                printf("[CIA402] PP Start: target=%d inc (%.2f rad), vel=%.1f rpm, dur=%.3f s\r\n",
+                       s_target_pos_inc, s_target_pos_abs, velocity_rpm, duration);
+                
+                MC_ProgramPositionCommandMotor1(s_target_pos_abs, duration);
                 s_pp_setpoint_pending = true;
             }
-
-            /* 检查位置是否到达 */
-            if (s_pp_setpoint_pending)
+            
+            /* 握手应答：如果 New Setpoint 变为 0，清除 pending (ACK 变为 0) */
+            if (!new_setpoint)
             {
-                PosCtrlStatus_t pos_status = MC_GetControlPositionStatusMotor1();
-                if (pos_status == TC_TARGET_POSITION_REACHED)
-                {
-                    s_pp_setpoint_pending = false;
-                }
+                s_pp_setpoint_pending = false;
             }
             break;
         }

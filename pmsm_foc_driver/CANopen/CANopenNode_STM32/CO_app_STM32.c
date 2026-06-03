@@ -218,6 +218,10 @@ canopen_app_process() {
         canopenNodeSTM32->outStatusLEDRed = CO_LED_RED(CO->LEDs, CO_LED_CANopen);
         canopenNodeSTM32->outStatusLEDGreen = CO_LED_GREEN(CO->LEDs, CO_LED_CANopen);
 
+        /* Update physical LEDs (Assuming active low) */
+        HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, canopenNodeSTM32->outStatusLEDGreen ? GPIO_PIN_RESET : GPIO_PIN_SET);
+        HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, canopenNodeSTM32->outStatusLEDRed ? GPIO_PIN_RESET : GPIO_PIN_SET);
+
         if (reset_status == CO_RESET_COMM) {
             /* delete objects from memory */
         	HAL_TIM_Base_Stop_IT(canopenNodeSTM32->timerHandle);
