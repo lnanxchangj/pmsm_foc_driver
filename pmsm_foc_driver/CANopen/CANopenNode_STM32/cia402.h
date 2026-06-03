@@ -83,19 +83,19 @@ typedef enum {
 /* ============================================================
  * 速度单位换算
  * MCSDK 内部: rpm (float)
- * CIA402 0x60FF: 用户自定义，此处约定 = 0.001 rpm (int32)
- * 即: rpm = targetVelocity / 1000.0f
+ * CIA402 0x60FF: 用户自定义，需求 1:1, 即 = 1 rpm (int32)
+ * 即: rpm = targetVelocity / 1.0f
  * ============================================================ */
-#define CIA402_VEL_SCALE    1000.0f    /* int → rpm 的除数 */
+#define CIA402_VEL_SCALE    1.0f    /* int → rpm 的除数 */
 
 /* 转矩单位: 0x6071/6077 单位为额定转矩的 0.1%，即 1000 = 100% */
 #define CIA402_TRQ_SCALE    1000.0f    /* int → 标幺值的除数 */
 
 /* 位置单位: 0x6064/607A 单位为编码器增量 (encoder counts)
- * 编码器 1000 PPR × 4倍频 = 4000 counts/圈
- * 4000 counts = 2π rad → scale = 4000 / (2π)
+ * 需求：1圈8000数值
+ * 8000 counts = 2π rad → scale = 8000 / (2π)
  */
-#define ENCODER_COUNTS_PER_REV  4000.0f
+#define ENCODER_COUNTS_PER_REV  8000.0f
 #define CIA402_POS_SCALE        (ENCODER_COUNTS_PER_REV / (2.0f * 3.14159265f))  /* ≈636.62 */
 
 /* ============================================================

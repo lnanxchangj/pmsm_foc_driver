@@ -519,14 +519,14 @@ void CIA402_Init(void)
     memset(&OD_RAM.x6040_controlword, 0, sizeof(uint16_t));
     OD_RAM.x6041_statusword             = SW_NOT_READY_TO_SWITCH_ON_VAL;
     printf("[CIA402] Init called, state=%d, SW=0x%04X\r\n", s_state, OD_RAM.x6041_statusword);
-    OD_RAM.x6060_modesOfOperation       = CIA402_MODE_PV; /* 默认速度模式 */
-    OD_RAM.x6061_modesOfOperationDisplay= CIA402_MODE_PV;
+    OD_RAM.x6060_modesOfOperation       = CIA402_MODE_PP; /* 默认位置模式 (Profile Position) */
+    OD_RAM.x6061_modesOfOperationDisplay= CIA402_MODE_PP;
     OD_RAM.x6064_positionActualValue    = 0;
     OD_RAM.x606C_velocityActualValue    = 0;
     OD_RAM.x6071_targetTorque           = 0;
     OD_RAM.x6077_torqueActualValue      = 0;
     OD_RAM.x607A_targetPosition         = 0;
-    OD_RAM.x6081_profileVelocity        = 500u; /* 默认500ms斜坡 */
+    OD_RAM.x6081_profileVelocity        = 60u; /* PP模式下的默认匀速运行转速: 60 RPM */
     OD_RAM.x60FF_targetVelocity         = 0;
 
     s_state            = CIA402_NOT_READY_TO_SWITCH_ON;
