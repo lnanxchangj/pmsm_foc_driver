@@ -822,7 +822,7 @@
             "P": "Number.NaN",
             "I": "Number.NaN"
           },
-          "cutOffFrequency": 1500,
+          "cutOffFrequency": 5000,
           "useMTPA": false,
           "feedForward": false,
           "MTPATarget": "Number.NaN"
@@ -918,7 +918,7 @@
         "rs": 0.35,
         "ls": 0.64,
         "mmsLd_lq_ratio": "Number.NaN",
-        "maxCurrent": 10,
+        "maxCurrent": 4,
         "maxDCVoltage": "Number.NaN",
         "BEmfConstant": 2.05,
         "inertia": 4,
