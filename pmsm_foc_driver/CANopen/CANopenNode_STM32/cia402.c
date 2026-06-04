@@ -21,6 +21,8 @@ static CIA402_State_t  s_state       = CIA402_NOT_READY_TO_SWITCH_ON;
 static uint16_t        s_cw_prev     = 0u;
 static bool            s_pp_setpoint_pending = false;
 static int32_t         s_target_pos_inc  = 0;
+static int32_t         s_last_target_vel = 0;
+static int8_t          s_last_mode       = 0;
 static uint32_t        s_fault_reaction_tick = 0;
 
 /* 连续多圈位置跟踪变量 */
@@ -97,6 +99,7 @@ static void CIA402_StateMachineProcess(void)
 {
     uint16_t cw = OD_RAM.x6040_controlword;
     MCI_State_t mc_state = MC_GetSTMStateMotor1();
+    int8_t mode = OD_RAM.x6060_modesOfOperation;
 
     if (MC_GetCurrentFaultsMotor1() != 0u && s_state != CIA402_FAULT && s_state != CIA402_FAULT_REACTION_ACTIVE)
     {
@@ -126,22 +129,54 @@ static void CIA402_StateMachineProcess(void)
                 }
                 else if (mc_state == RUN)
                 {
+                    /* 双零点同步法：保证物理寻零后的坐标偏移正确，避免初次起步的跳变与额外一圈 */
                     s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
                     s_continuous_pos_float = 0.0f;
                     s_pos_tracker_ready = true;
-                    MC_ProgramPositionCommandMotor1(MC_GetCtrlPositionAngle1(), 0.0f);
+                    
+                    /* 根据模式初始化底层 */
+                    if (mode == 1) {
+                        if (pPosCtrl[0]) pPosCtrl[0]->PositionControlRegulation = ENABLE;
+                        MC_ProgramPositionCommandMotor1(MC_GetCtrlPositionAngle1(), 0.0f);
+                    } else if (mode == 3) {
+                        if (pPosCtrl[0]) pPosCtrl[0]->PositionControlRegulation = DISABLE;
+                        if (pSTC[0]) STC_SetControlMode(pSTC[0], MCM_SPEED_MODE);
+                        MC_ProgramSpeedRampMotor1_F(0.0f, 0.0f);
+                    }
+                    
                     s_target_pos_inc = 0;
+                    s_last_target_vel = 0;
+                    s_last_mode = mode;
                     OD_RAM.x607A_targetPosition = 0;
                     OD_RAM.x6064_positionActualValue = 0;
                     s_state = CIA402_OPERATION_ENABLED;
-                    printf("[CIA402] ENABLED: Handshake & Status Reset\r\n");
+                    printf("[CIA402] ENABLED: Mode %d Ready\r\n", mode);
                 }
             }
             break;
         case CIA402_OPERATION_ENABLED:
-            if ((cw & 0x000F) != 0x000F) { MC_StopMotor1(); s_state = CIA402_SWITCHED_ON; }
+            if ((cw & 0x000F) != 0x000F) 
+            { 
+                printf("[CIA402] Disabling from OPERATION_ENABLED. CW: 0x%04X, MC State: %d\r\n", cw, mc_state);
+                MC_StopMotor1(); 
+                s_state = CIA402_SWITCHED_ON; 
+            }
             else
             {
+                /* 动态模式切换 */
+                if (mode != s_last_mode) {
+                    if (mode == 1) {
+                        if (pPosCtrl[0]) pPosCtrl[0]->PositionControlRegulation = ENABLE;
+                        MC_ProgramPositionCommandMotor1(MC_GetCtrlPositionAngle1(), 0.0f);
+                        printf("[CIA402] Mode Switched to PP (1)\r\n");
+                    } else if (mode == 3) {
+                        if (pPosCtrl[0]) pPosCtrl[0]->PositionControlRegulation = DISABLE;
+                        if (pSTC[0]) STC_SetControlMode(pSTC[0], MCM_SPEED_MODE);
+                        MC_ProgramSpeedRampMotor1_F(0.0f, 0.0f);
+                        printf("[CIA402] Mode Switched to PV (3) - Pos Loop Disabled\r\n");
+                    }
+                    s_last_mode = mode;
+                }
                 if (OD_RAM.x6060_modesOfOperation == 1)
                 {
                     bool new_setpoint = (cw & CW_NEW_SETPOINT) != 0u;
@@ -187,6 +222,21 @@ static void CIA402_StateMachineProcess(void)
                     
                     /* 握手逻辑：Master 撤回 Bit 4 后，驱动器才撤回 Bit 12 */
                     if (!new_setpoint) s_pp_setpoint_pending = false;
+                }
+                else if (mode == 3) /* PV Mode */
+                {
+                    int32_t target_vel = OD_RAM.x60FF_targetVelocity;
+                    if (target_vel != s_last_target_vel)
+                    {
+                        float_t target_rpm = (float_t)target_vel / CIA402_VEL_SCALE;
+                        /* 修复：使用 0x6083 (profileAcceleration) 作为斜坡时间(ms) 避免突变失速 */
+                        uint16_t ramp_ms = (uint16_t)OD_RAM.x6083_profileAcceleration;
+                        if (ramp_ms < 10) ramp_ms = 500; // 默认给500ms保护
+                        
+                        MC_ProgramSpeedRampMotor1_F(target_rpm, ramp_ms); 
+                        s_last_target_vel = target_vel;
+                        printf("[CIA402] PV Target: %d RPM, Ramp: %d ms\r\n", (int)target_vel, ramp_ms);
+                    }
                 }
             }
             break;
