@@ -11,7 +11,7 @@ NODE_ID        = 1
 EDS_PATH       = r'CANopen\CANopenNode_STM32\DS301_profile.eds'
 
 # 串口参数
-SERIAL_PORT = 'COM4'
+SERIAL_PORT = 'COM6'
 SERIAL_BAUD = 115200
 
 def read_serial_log():
@@ -94,35 +94,50 @@ def main():
             time.sleep(0.2)
         return False
 
-    # ========== 速度模式 (PV) 测试 ==========
-    # print("\n[测试 1] 切换到 PV 模式 (Profile Velocity) - 已跳过")
-    # node.sdo.download(0x6060, 0, b'\x03') # 3 = PV Mode
-    # time.sleep(0.1)
-    # 
-    # if not set_cia402_state("OPERATION_ENABLED"):
-    #     print("使能失败，退出。")
-    #     return
-    #
-    # # 设定速度为 4000 rpm
-    # target_vel = 4000
-    # print(f"\n[测试 1.1] 设定目标速度: {target_vel} RPM")
-    # node.sdo.download(0x60FF, 0, int(target_vel).to_bytes(4, 'little', signed=True))
-    # time.sleep(5.0)
-    #
-    # # 设定速度为 0 rpm
-    # target_vel = 0
-    # print(f"\n[测试 1.2] 设定目标速度: {target_vel} RPM (停止)")
-    # node.sdo.download(0x60FF, 0, int(target_vel).to_bytes(4, 'little', signed=True))
-    # time.sleep(2.0)
+    # ========== 回零模式 (HM) 测试 ==========
+    print("\n[测试 1] 切换到 HM 模式 (Homing)")
+    set_cw(0x06) # Shutdown
+    time.sleep(0.5)
+    node.sdo.download(0x6060, 0, b'\x06') # 6 = HM Mode
+    time.sleep(0.1)
+
+    print("\n[测试 1.1] 设置回零参数")
+    # 寻零位 (33 = 0x21)
+    node.sdo.download(0x6098, 0, b'\x21')
+    # 设置回零速度 (6099 sub 1/2) 为 60 RPM
+    node.sdo.download(0x6099, 1, int(60).to_bytes(4, 'little', signed=False))
+    node.sdo.download(0x6099, 2, int(60).to_bytes(4, 'little', signed=False))
+
+    if not set_cia402_state("OPERATION_ENABLED"):
+        print("使能失败，退出。")
+        return
+
+    print("\n[测试 1.2] 触发回零 (Homing Operation Start)")
+    set_cw(0x1F) # Enable Op (0x0F) + Homing Start (0x10)
+    
+    # 等待回零完成 (Bit 12 Homing Attained = 1, Bit 10 Target Reached = 1)
+    # Mask = 0x1400, Value = 0x1400
+    if wait_status(0x1400, 0x1400, timeout=10.0):
+        print(">>> 回零成功完成 (Homing Attained) <<<")
+    else:
+        print(">>> 回零超时或失败 <<<")
+    
+    set_cw(0x0F) # 清除 Homing Start
+    time.sleep(1.0)
+
 
     # ========== 位置模式 (PP) 测试 ==========
     print("\n[测试 2] 切换到 PP 模式 (Profile Position)")
-    # 切换模式前先关闭使能
-    set_cw(0x06)
+    set_cw(0x06) # 切换模式前先关闭使能
     time.sleep(0.5)
     node.sdo.download(0x6060, 0, b'\x01') # 1 = PP Mode
     time.sleep(0.1)
-    
+
+    print("\n[测试 2.1] 设置运行参数")
+    # 设置运动速度为 100 RPM
+    node.sdo.download(0x6081, 0, int(60).to_bytes(4, 'little', signed=False))
+    print("已设置 Profile Velocity (0x6081) = 60 RPM")
+
     if not set_cia402_state("OPERATION_ENABLED"):
         print("使能失败，退出。")
         return
@@ -147,12 +162,16 @@ def main():
         except Exception as e:
             print(f"运动错误: {e}")
 
-    print("\n[测试 2.1] 相对运动 1 圈 (8000 counts)")
-    do_pp_move(COUNTS_PER_REV, relative=True)
+    print("\n[测试 2.2] 绝对运动到 0.5 圈位置 (4000 counts)")
+    do_pp_move(4000, relative=False)
     time.sleep(1)
 
-    print("\n[测试 2.2] 相对运动 -1 圈 (-8000 counts)")
-    do_pp_move(-COUNTS_PER_REV, relative=True)
+    print("\n[测试 2.3] 绝对运动到 45° 位置 (1000 counts)")
+    do_pp_move(1000, relative=False)
+    time.sleep(1)
+
+    print("\n[测试 2.4] 绝对运动回到 0 零点位置 (0 counts)")
+    do_pp_move(0, relative=False)
     time.sleep(1)
 
     print("\n--- 测试完成，断开连接 ---")

@@ -50,9 +50,10 @@ def cia402_demo():
         start = time.time()
         while time.time() - start < timeout:
             sw = get_sw()
+            print(f"  [Debug] SW: 0x{sw:04X} (Masked: 0x{sw&mask:04X})")
             if (sw & mask) == val:
                 return sw
-            time.sleep(0.1)
+            time.sleep(0.2)
         return None
 
     def set_cia402_state(target):
@@ -101,6 +102,11 @@ def cia402_demo():
             # 写入目标位置 (int32)
             node.sdo.download(0x607A, 0, int(target).to_bytes(4, 'little', signed=True))
             
+            # 验证写入
+            target_read = int.from_bytes(node.sdo.upload(0x607A, 0), 'little', signed=True)
+            if target_read != int(target):
+                print(f"  [Error] Target write mismatch! Sent {target}, Read {target_read}")
+            
             # 触发指令
             set_cw(flags)
             
@@ -111,10 +117,22 @@ def cia402_demo():
             # 清除 New Setpoint
             set_cw(flags & ~0x10)
             
+            # 增加一个极小的延时，确保从机已经处理了 New Setpoint 的清除并更新了状态
+            time.sleep(0.1)
+            
             # 等待到达 (Target Reached bit 10)
             print("Waiting for target reached...")
-            wait_status(0x0400, 0x0400, timeout=10.0)
-            print("Done.")
+            sw_final = wait_status(0x0400, 0x0400, timeout=10.0)
+            
+            if sw_final:
+                # 获取并打印实际位置，增加可观察性
+                pos = int.from_bytes(node.sdo.upload(0x6064, 0), 'little', signed=True)
+                print(f"Done. Current Position: {pos} counts")
+            else:
+                print("Timeout waiting for Target Reached!")
+            
+            # 增加停顿，让用户能看清动作
+            time.sleep(1.0)
         except Exception as e:
             print(f"Move error: {e}")
 
