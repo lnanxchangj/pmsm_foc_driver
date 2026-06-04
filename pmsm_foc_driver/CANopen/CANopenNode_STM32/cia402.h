@@ -61,6 +61,7 @@ typedef enum {
 #define SW_TARGET_REACHED     (1u << 10)
 #define SW_INTERNAL_LIMIT     (1u << 11)
 #define SW_SETPOINT_ACK       (1u << 12)  /* PP模式应答 */
+#define SW_HOMING_ATTAINED    (1u << 12)  /* HM模式回零完成 */
 
 /* ============================================================
  * 状态字掩码 (低7位表示状态)
@@ -84,23 +85,22 @@ typedef enum {
  * 速度单位换算
  * MCSDK 内部: rpm (float)
  * CIA402 0x60FF: 用户自定义，需求 1:1, 即 = 1 rpm (int32)
- * 即: rpm = targetVelocity / 1.0f
  * ============================================================ */
-#define CIA402_VEL_SCALE    1.0f    /* int → rpm 的除数 */
+#define CIA402_VEL_SCALE    1.0f
 
-/* 转矩单位: 0x6071/6077 单位为额定转矩的 0.1%，即 1000 = 100% */
-#define CIA402_TRQ_SCALE    1000.0f    /* int → 标幺值的除数 */
-
-/* 位置单位: 0x6064/607A 单位为编码器增量 (encoder counts)
- * 需求：1圈8000数值
- * 8000 counts = 2π rad → scale = 8000 / (2π)
+/* 转矩单位: 0x6071/6077 单位为额定转矩的 0.1%，即 1000 = 100%
+ * MCSDK 使用 A (float)
+ * 1000 = NOMINAL_CURRENT_A
  */
-#define ENCODER_COUNTS_PER_REV  8000.0f
-#define CIA402_POS_SCALE        (ENCODER_COUNTS_PER_REV / (2.0f * 3.14159265f))  /* ≈636.62 */
+#define CIA402_TRQ_SCALE    1000.0f
 
 /* ============================================================
- * 公共接口
+ * 容差窗口 (Windows) - 模拟 0x6067/0x606D
  * ============================================================ */
+#define POS_WINDOW_DEFAULT      10      /* counts */
+#define VEL_WINDOW_DEFAULT      10      /* rpm */
+#define TRQ_WINDOW_DEFAULT      10      /* 0.1% units */
+#define WINDOW_TIME_MS          10      /* 持续 10ms 认为到达 */
 void CIA402_Init(void);
 void CIA402_Process(void);          /* 放入 1ms 周期任务中调用 */
 

@@ -308,6 +308,11 @@ typedef struct {
     int16_t x6077_torqueActualValue;
     int32_t x607A_targetPosition;
     int32_t x6081_profileVelocity;
+    uint32_t x6083_profileAcceleration;
+    int8_t x6098_homingMethod;
+    uint8_t x6099_homingSpeeds_sub0;
+    uint32_t x6099_homingSpeeds[2];
+    uint32_t x609A_homingAcceleration;
     int32_t x60FF_targetVelocity;
 } OD_RAM_t;
 
@@ -381,7 +386,11 @@ extern OD_ATTR_OD OD_t *OD;
 #define OD_ENTRY_H6077 &OD->list[48]
 #define OD_ENTRY_H607A &OD->list[49]
 #define OD_ENTRY_H6081 &OD->list[50]
-#define OD_ENTRY_H60FF &OD->list[51]
+#define OD_ENTRY_H6083 &OD->list[51]
+#define OD_ENTRY_H6098 &OD->list[52]
+#define OD_ENTRY_H6099 &OD->list[53]
+#define OD_ENTRY_H609A &OD->list[54]
+#define OD_ENTRY_H60FF &OD->list[55]
 
 
 /*******************************************************************************

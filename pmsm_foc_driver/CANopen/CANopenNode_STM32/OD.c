@@ -264,6 +264,12 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
     .x6071_targetTorque = 0,
     .x6077_torqueActualValue = 0,
     .x607A_targetPosition = 0,
+    .x6081_profileVelocity = 0,
+    .x6083_profileAcceleration = 0,
+    .x6098_homingMethod = 0,
+    .x6099_homingSpeeds_sub0 = 2,
+    .x6099_homingSpeeds = {0, 0},
+    .x609A_homingAcceleration = 0,
     .x60FF_targetVelocity = 0
 };
 
@@ -324,6 +330,10 @@ typedef struct {
     OD_obj_var_t o_6077_torqueActualValue;
     OD_obj_var_t o_607A_targetPosition;
     OD_obj_var_t o_6081_profileVelocity;
+    OD_obj_var_t o_6083_profileAcceleration;
+    OD_obj_var_t o_6098_homingMethod;
+    OD_obj_array_t o_6099_homingSpeeds;
+    OD_obj_var_t o_609A_homingAcceleration;
     OD_obj_var_t o_60FF_targetVelocity;
 } ODObjs_t;
 
@@ -1498,6 +1508,29 @@ static CO_PROGMEM ODObjs_t ODObjs = {
         .attribute = ODA_SDO_RW | ODA_RPDO | ODA_MB,
         .dataLength = 4
     },
+    .o_6083_profileAcceleration = {
+        .dataOrig = &OD_RAM.x6083_profileAcceleration,
+        .attribute = ODA_SDO_RW | ODA_RPDO | ODA_MB,
+        .dataLength = 4
+    },
+    .o_6098_homingMethod = {
+        .dataOrig = &OD_RAM.x6098_homingMethod,
+        .attribute = ODA_SDO_RW | ODA_RPDO,
+        .dataLength = 1
+    },
+    .o_6099_homingSpeeds = {
+        .dataOrig0 = &OD_RAM.x6099_homingSpeeds_sub0,
+        .dataOrig = &OD_RAM.x6099_homingSpeeds[0],
+        .attribute0 = ODA_SDO_R,
+        .attribute = ODA_SDO_RW | ODA_MB,
+        .dataElementLength = 4,
+        .dataElementSizeof = sizeof(uint32_t)
+    },
+    .o_609A_homingAcceleration = {
+        .dataOrig = &OD_RAM.x609A_homingAcceleration,
+        .attribute = ODA_SDO_RW | ODA_RPDO | ODA_MB,
+        .dataLength = 4
+    },
     .o_60FF_targetVelocity = {
         .dataOrig = &OD_RAM.x60FF_targetVelocity,
         .attribute = ODA_SDO_RW | ODA_RPDO | ODA_MB,
@@ -1561,6 +1594,10 @@ static OD_ATTR_OD OD_entry_t ODList[] = {
     {0x6077, 0x01, ODT_VAR, &ODObjs.o_6077_torqueActualValue, NULL},
     {0x607A, 0x01, ODT_VAR, &ODObjs.o_607A_targetPosition, NULL},
     {0x6081, 0x01, ODT_VAR, &ODObjs.o_6081_profileVelocity, NULL},
+    {0x6083, 0x01, ODT_VAR, &ODObjs.o_6083_profileAcceleration, NULL},
+    {0x6098, 0x01, ODT_VAR, &ODObjs.o_6098_homingMethod, NULL},
+    {0x6099, 0x03, ODT_ARR, &ODObjs.o_6099_homingSpeeds, NULL},
+    {0x609A, 0x01, ODT_VAR, &ODObjs.o_609A_homingAcceleration, NULL},
     {0x60FF, 0x01, ODT_VAR, &ODObjs.o_60FF_targetVelocity, NULL},
     {0x0000, 0x00, 0, NULL, NULL}
 };

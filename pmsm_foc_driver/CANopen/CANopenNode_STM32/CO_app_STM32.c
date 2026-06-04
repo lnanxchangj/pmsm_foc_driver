@@ -35,32 +35,32 @@
 
 #include "CIA402.h"
 
-CANopenNodeSTM32*
+CANopenNodeSTM32 *
     canopenNodeSTM32; // It will be set by canopen_app_init and will be used across app to get access to CANOpen objects
 
 /* Printf function of CanOpen app */
 #define log_printf(macropar_message, ...) printf(macropar_message, ##__VA_ARGS__)
 
 /* default values for CO_CANopenInit() */
-#define NMT_CONTROL                                                                                                    \
-    CO_NMT_STARTUP_TO_OPERATIONAL                                                                                      \
+#define NMT_CONTROL               \
+    CO_NMT_STARTUP_TO_OPERATIONAL \
     | CO_NMT_ERR_ON_ERR_REG | CO_ERR_REG_GENERIC_ERR | CO_ERR_REG_COMMUNICATION
-#define FIRST_HB_TIME        500
+#define FIRST_HB_TIME 500
 #define SDO_SRV_TIMEOUT_TIME 1000
 #define SDO_CLI_TIMEOUT_TIME 500
-#define SDO_CLI_BLOCK        false
-#define OD_STATUS_BITS       NULL
+#define SDO_CLI_BLOCK false
+#define OD_STATUS_BITS NULL
 
 /* Global variables and objects */
-CO_t* CO = NULL; /* CANopen object */
+CO_t *CO = NULL; /* CANopen object */
 
 // Global variables
 uint32_t time_old, time_current;
 CO_ReturnError_t err;
 
 /* This function will basically setup the CANopen node */
-int
-canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
+int canopen_app_init(CANopenNodeSTM32 *_canopenNodeSTM32)
+{
 
     // Keep a copy global reference of canOpenSTM32 Object
     canopenNodeSTM32 = _canopenNodeSTM32;
@@ -77,7 +77,7 @@ canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
 #endif
 
     /* Allocate memory */
-    CO_config_t* config_ptr = NULL;
+    CO_config_t *config_ptr = NULL;
 #ifdef CO_MULTIPLE_OD
     /* example usage of CO_MULTIPLE_OD (but still single OD here) */
     CO_config_t co_config = {0};
@@ -89,10 +89,13 @@ canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
 
     uint32_t heapMemoryUsed;
     CO = CO_new(config_ptr, &heapMemoryUsed);
-    if (CO == NULL) {
+    if (CO == NULL)
+    {
         log_printf("Error: Can't allocate memory\n");
         return 1;
-    } else {
+    }
+    else
+    {
         log_printf("Allocated %" PRIu32 " bytes for CANopen objects\n", heapMemoryUsed);
     }
 
@@ -103,7 +106,8 @@ canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
                                OD_ENTRY_H1011_restoreDefaultParameters, storageEntries, storageEntriesCount,
                                &storageInitError);
 
-    if (err != CO_ERROR_NO && err != CO_ERROR_DATA_CORRUPT) {
+    if (err != CO_ERROR_NO && err != CO_ERROR_DATA_CORRUPT)
+    {
         log_printf("Error: Storage %d\n", storageInitError);
         return 2;
     }
@@ -114,8 +118,8 @@ canopen_app_init(CANopenNodeSTM32* _canopenNodeSTM32) {
     return 0;
 }
 
-int
-canopen_app_resetCommunication() {
+int canopen_app_resetCommunication()
+{
     /* CANopen communication reset - initialize CANopen objects *******************/
     log_printf("CANopenNode - Reset communication...\n");
 
@@ -123,12 +127,13 @@ canopen_app_resetCommunication() {
     CO->CANmodule->CANnormal = false;
 
     /* Enter CAN configuration. */
-    CO_CANsetConfigurationMode((void*)canopenNodeSTM32);
+    CO_CANsetConfigurationMode((void *)canopenNodeSTM32);
     CO_CANmodule_disable(CO->CANmodule);
 
     /* initialize CANopen */
     err = CO_CANinit(CO, canopenNodeSTM32, 0); // Bitrate for STM32 microcontroller is being set in MXCube Settings
-    if (err != CO_ERROR_NO) {
+    if (err != CO_ERROR_NO)
+    {
         log_printf("Error: CAN initialization failed: %d\n", err);
         return 1;
     }
@@ -138,7 +143,8 @@ canopen_app_resetCommunication() {
                                                 .revisionNumber = OD_PERSIST_COMM.x1018_identity.revisionNumber,
                                                 .serialNumber = OD_PERSIST_COMM.x1018_identity.serialNumber}};
     err = CO_LSSinit(CO, &lssAddress, &canopenNodeSTM32->desiredNodeID, &canopenNodeSTM32->baudrate);
-    if (err != CO_ERROR_NO) {
+    if (err != CO_ERROR_NO)
+    {
         log_printf("Error: LSS slave initialization failed: %d\n", err);
         return 2;
     }
@@ -157,39 +163,51 @@ canopen_app_resetCommunication() {
                          SDO_CLI_TIMEOUT_TIME, /* SDOclientTimeoutTime_ms */
                          SDO_CLI_BLOCK,        /* SDOclientBlockTransfer */
                          canopenNodeSTM32->activeNodeID, &errInfo);
-    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
-        if (err == CO_ERROR_OD_PARAMETERS) {
+    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS)
+    {
+        if (err == CO_ERROR_OD_PARAMETERS)
+        {
             log_printf("Error: Object Dictionary entry 0x%" PRIx32 "\n", errInfo);
-        } else {
+        }
+        else
+        {
             log_printf("Error: CANopen initialization failed: %d\n", err);
         }
         return 3;
     }
 
     err = CO_CANopenInitPDO(CO, CO->em, OD, canopenNodeSTM32->activeNodeID, &errInfo);
-    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS) {
-        if (err == CO_ERROR_OD_PARAMETERS) {
+    if (err != CO_ERROR_NO && err != CO_ERROR_NODE_ID_UNCONFIGURED_LSS)
+    {
+        if (err == CO_ERROR_OD_PARAMETERS)
+        {
             log_printf("Error: Object Dictionary entry 0x%" PRIx32 "\n", errInfo);
-        } else {
+        }
+        else
+        {
             log_printf("Error: PDO initialization failed: %d\n", err);
         }
         return 4;
     }
 
     /* Configure Timer interrupt function for execution every 1 millisecond */
-    HAL_TIM_Base_Start_IT(canopenNodeSTM32->timerHandle); //1ms interrupt
+    HAL_TIM_Base_Start_IT(canopenNodeSTM32->timerHandle); // 1ms interrupt
 
     /* Configure CAN transmit and receive interrupt */
 
     /* Configure CANopen callbacks, etc */
-    if (!CO->nodeIdUnconfigured) {
+    if (!CO->nodeIdUnconfigured)
+    {
 
 #if (CO_CONFIG_STORAGE) & CO_CONFIG_STORAGE_ENABLE
-        if (storageInitError != 0) {
+        if (storageInitError != 0)
+        {
             CO_errorReport(CO->em, CO_EM_NON_VOLATILE_MEMORY, CO_EMC_HARDWARE, storageInitError);
         }
 #endif
-    } else {
+    }
+    else
+    {
         log_printf("CANopenNode - Node-id not initialized\n");
     }
 
@@ -202,13 +220,14 @@ canopen_app_resetCommunication() {
     return 0;
 }
 
-void
-canopen_app_process() {
+void canopen_app_process()
+{
     /* loop for normal program execution ******************************************/
     /* get time difference since last function call */
     time_current = HAL_GetTick();
 
-    if ((time_current - time_old) > 0) { // Make sure more than 1ms elapsed
+    if ((time_current - time_old) > 0)
+    { // Make sure more than 1ms elapsed
         /* CANopen process */
         CO_NMT_reset_cmd_t reset_status;
         uint32_t timeDifference_us = (time_current - time_old) * 1000;
@@ -222,14 +241,17 @@ canopen_app_process() {
         HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, canopenNodeSTM32->outStatusLEDGreen ? GPIO_PIN_RESET : GPIO_PIN_SET);
         HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, canopenNodeSTM32->outStatusLEDRed ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
-        if (reset_status == CO_RESET_COMM) {
+        if (reset_status == CO_RESET_COMM)
+        {
             /* delete objects from memory */
-        	HAL_TIM_Base_Stop_IT(canopenNodeSTM32->timerHandle);
-            CO_CANsetConfigurationMode((void*)canopenNodeSTM32);
+            HAL_TIM_Base_Stop_IT(canopenNodeSTM32->timerHandle);
+            CO_CANsetConfigurationMode((void *)canopenNodeSTM32);
             CO_delete(CO);
             log_printf("CANopenNode Reset Communication request\n");
             canopen_app_init(canopenNodeSTM32); // Reset Communication routine
-        } else if (reset_status == CO_RESET_APP) {
+        }
+        else if (reset_status == CO_RESET_APP)
+        {
             log_printf("CANopenNode Device Reset\n");
             HAL_NVIC_SystemReset(); // Reset the STM32 Microcontroller
         }
@@ -237,10 +259,11 @@ canopen_app_process() {
 }
 
 /* Thread function executes in constant intervals, this function can be called from FreeRTOS tasks or Timers ********/
-void
-canopen_app_interrupt(void) {
+void canopen_app_interrupt(void)
+{
     CO_LOCK_OD(CO->CANmodule);
-    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal) {
+    if (!CO->nodeIdUnconfigured && CO->CANmodule->CANnormal)
+    {
         bool_t syncWas = false;
         /* get time difference since last function call */
         uint32_t timeDifference_us = 1000; // 1ms second
