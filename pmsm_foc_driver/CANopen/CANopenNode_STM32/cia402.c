@@ -175,22 +175,20 @@ static void CIA402_StateMachineProcess(void)
 
                 /* 双零点同步法：保证物理寻零后的坐标偏移正确，避免初次起步的跳变与额外一圈 */
                 s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
-                s_continuous_pos_float = 0.0f;
+                if (!s_pos_tracker_ready) {
+                    s_continuous_pos_float = 0.0f;
+                }
                 s_pos_tracker_ready = true;
 
                 /* 根据模式初始化底层 */
                 if (mode == 1)
                 {
-                    /* 【修复】同步Theta到编码器实际位置，且必须在使能位置环之前完成。
-                     * 顺序至关重要：如果先使能 PositionControlRegulation，
-                     * 中频中断可能在其与同步之间触发 TC_PositionRegulation，
-                     * 此时 Theta 仍是旧值（0），而 wMecAngle 可能是数百万，
-                     * 误差 = 0 - 巨值 → PID饱和 → 最大扭矩暴冲失速。
-                     * 对于重启对齐路径：TC_EncoderReset 已将 wMecAngle/Theta 都置0，
-                     * 此处的同步是幂等操作（0→0），不会破坏零点。 */
                     float_t sync_pos_rad = MC_GetCurrentPosition1();
                     MC_SetCtrlPositionAngle1(sync_pos_rad);
-                    MC_ProgramPositionCommandMotor1(sync_pos_rad, 0.0f);
+                    if (pMCI[0]->pPosCtrl)
+                    {
+                        pMCI[0]->pPosCtrl->PositionCtrlStatus = TC_READY_FOR_COMMAND;
+                    }
                     /* 使能位置环：放在最后，确保 Theta 已同步 */
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = ENABLE;
@@ -204,11 +202,14 @@ static void CIA402_StateMachineProcess(void)
                     MC_ProgramSpeedRampMotor1_F(0.0f, 0.0f);
                 }
 
-                s_target_pos_inc = 0;
                 s_last_target_vel = 0;
                 s_last_mode = mode;
-                OD_RAM.x607A_targetPosition = 0;
-                OD_RAM.x6064_positionActualValue = 0;
+                
+                /* 保持当前的实际位置，并将目标位置同步到当前位置，避免跳变 */
+                CIA402_UpdateActualValues();
+                s_target_pos_inc = OD_RAM.x6064_positionActualValue;
+                OD_RAM.x607A_targetPosition = OD_RAM.x6064_positionActualValue;
+                
                 s_state = CIA402_OPERATION_ENABLED;
                 printf("[CIA402] ENABLED: Mode %d Ready\r\n", mode);
             }
@@ -228,21 +229,22 @@ static void CIA402_StateMachineProcess(void)
             {
                 if (mode == 1)
                 {
-                    /* 【修复】动态切换位置模式：
-                     * 1. 先同步 Theta 到编码器当前位置（速度模式下 wMecAngle 已累积）
-                     * 2. 重置 CIA402 位置跟踪状态
-                     * 3. 最后才使能位置环 —— 顺序至关重要！
-                     *    如果在同步前使能，中频中断触发 TC_PositionRegulation 时
-                     *    会用旧 Theta(0) 与 巨值 wMecAngle 计算误差 → 暴冲失速 */
                     float_t sync_pos_rad = MC_GetCurrentPosition1();
                     MC_SetCtrlPositionAngle1(sync_pos_rad);
-                    MC_ProgramPositionCommandMotor1(sync_pos_rad, 0.0f);
-                    /* 重置 CIA402 跟踪状态，以当前位置为新零点 */
+                    
+                    if (pMCI[0]->pPosCtrl)
+                    {
+                        pMCI[0]->pPosCtrl->PositionCtrlStatus = TC_READY_FOR_COMMAND;
+                    }
+                    
+                    /* 保持 CIA402 连续位置跟踪不归零，仅更新基准 */
                     s_last_mcsdk_pos_rad = sync_pos_rad;
-                    s_continuous_pos_float = 0.0f;
-                    s_target_pos_inc = 0;
-                    OD_RAM.x607A_targetPosition = 0;
-                    OD_RAM.x6064_positionActualValue = 0;
+                    
+                    /* 更新最新的实际位置，并吸附目标位置避免跳变 */
+                    CIA402_UpdateActualValues();
+                    s_target_pos_inc = OD_RAM.x6064_positionActualValue;
+                    OD_RAM.x607A_targetPosition = OD_RAM.x6064_positionActualValue;
+                    
                     /* 最后使能位置环，确保 Theta 已同步完毕 */
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = ENABLE;
