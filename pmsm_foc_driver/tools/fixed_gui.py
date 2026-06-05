@@ -43,8 +43,22 @@ class CanMasterWindow(QMainWindow):
         conn_group.setLayout(conn_layout)
         main_layout.addWidget(conn_group)
 
-        # 2. 状态控制
-        state_group = QGroupBox("2. 系统控制")
+        # 1.5. NMT 控制 (CiA 301)
+        nmt_group = QGroupBox("1.5. NMT 控制 (CiA 301)")
+        nmt_layout = QHBoxLayout()
+        btn_nmt_start = QPushButton("Start (0x01)"); btn_nmt_start.clicked.connect(lambda: self.send_nmt(0x01))
+        btn_nmt_preop = QPushButton("Pre-Op (0x80)"); btn_nmt_preop.clicked.connect(lambda: self.send_nmt(0x80))
+        btn_nmt_reset = QPushButton("Reset Node (0x81)"); btn_nmt_reset.clicked.connect(lambda: self.send_nmt(0x81))
+        btn_nmt_comm = QPushButton("Reset Comm (0x82)"); btn_nmt_comm.clicked.connect(lambda: self.send_nmt(0x82))
+        nmt_layout.addWidget(btn_nmt_start)
+        nmt_layout.addWidget(btn_nmt_preop)
+        nmt_layout.addWidget(btn_nmt_reset)
+        nmt_layout.addWidget(btn_nmt_comm)
+        nmt_group.setLayout(nmt_layout)
+        main_layout.addWidget(nmt_group)
+
+        # 2. 状态控制 (CiA 402)
+        state_group = QGroupBox("2. 系统控制 (CiA 402)")
         state_layout = QGridLayout()
         
         state_layout.addWidget(QLabel("控制模式:"), 0, 0)
@@ -52,14 +66,26 @@ class CanMasterWindow(QMainWindow):
         self.combo_mode.addItems(["Profile Position (PP)", "Profile Velocity (PV)"])
         state_layout.addWidget(self.combo_mode, 0, 1)
         
-        self.btn_enable = QPushButton("电机使能")
-        self.btn_enable.clicked.connect(self.enable_motor)
-        self.btn_enable.setStyleSheet("background-color: #90EE90;")
-        state_layout.addWidget(self.btn_enable, 0, 2)
+        self.btn_apply_mode = QPushButton("设置模式 (0x6060)")
+        self.btn_apply_mode.clicked.connect(self.apply_mode)
+        state_layout.addWidget(self.btn_apply_mode, 0, 2)
         
-        self.btn_disable = QPushButton("电机断电")
-        self.btn_disable.clicked.connect(self.disable_motor)
-        state_layout.addWidget(self.btn_disable, 0, 3)
+        self.btn_shutdown = QPushButton("Shutdown (0x06)")
+        self.btn_shutdown.clicked.connect(lambda: self.send_controlword(0x06))
+        state_layout.addWidget(self.btn_shutdown, 1, 0)
+
+        self.btn_switch_on = QPushButton("Switch On (0x07)")
+        self.btn_switch_on.clicked.connect(lambda: self.send_controlword(0x07))
+        state_layout.addWidget(self.btn_switch_on, 1, 1)
+
+        self.btn_enable = QPushButton("Enable (0x0F)")
+        self.btn_enable.clicked.connect(lambda: self.send_controlword(0x0F))
+        self.btn_enable.setStyleSheet("background-color: #90EE90;")
+        state_layout.addWidget(self.btn_enable, 1, 2)
+
+        self.btn_fault_reset = QPushButton("Fault Reset (0x80)")
+        self.btn_fault_reset.clicked.connect(lambda: self.send_controlword(0x80))
+        state_layout.addWidget(self.btn_fault_reset, 1, 3)
         
         state_group.setLayout(state_layout)
         main_layout.addWidget(state_group)
@@ -169,26 +195,22 @@ class CanMasterWindow(QMainWindow):
     def send_sdo_read(self, index, subindex):
         self.send_frame(0x600 + self.node_id, [0x40, index & 0xFF, (index >> 8) & 0xFF, subindex, 0, 0, 0, 0])
 
-    def enable_motor(self):
+    def send_nmt(self, cs):
+        self.send_frame(0x000, [cs, self.node_id])
+        self.log(f"发送 NMT 指令: 0x{cs:02X}")
+
+    def send_controlword(self, cw):
+        self.send_sdo_write(0x6040, 0, cw, 2)
+        self.log(f"下发控制字 0x6040: 0x{cw:04X}")
+
+    def apply_mode(self):
         mode_str = self.combo_mode.currentText()
         mode_val = 1 if "PP" in mode_str else 3
-        
-        # 1. 设置模式
         self.send_sdo_write(0x6060, 0, mode_val, 1)
-        time.sleep(0.1)
-        
-        # 2. 状态机跳转
-        for val in [0x06, 0x07, 0x0F]:
-            self.send_sdo_write(0x6040, 0, val, 2)
-            time.sleep(0.1)
-            
+        self.log(f"设置目标模式 0x6060: {mode_str} ({mode_val})")
+        # 可以选择同步下发速度/加速度等参数
         self.set_profile_velocity()
         self.set_profile_acceleration()
-        self.log(f"电机使能完成 (模式: {mode_str})")
-
-    def disable_motor(self):
-        self.send_sdo_write(0x6040, 0, 0x06, 2)
-        self.log("电机已停止使能")
 
     def set_profile_velocity(self):
         vel = self.profile_vel.value()

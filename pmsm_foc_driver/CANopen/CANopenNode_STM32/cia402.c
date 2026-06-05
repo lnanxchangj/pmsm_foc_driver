@@ -156,18 +156,6 @@ static void CIA402_StateMachineProcess(void)
         {
             if (mc_state == IDLE)
             {
-                /* 【修复】位置模式重启时强制重新执行编码器Z-index寻零对齐。
-                 * MC SDK 的 TC_EncAlignmentCommand 只在第一次上电时执行对齐，
-                 * 重启动时 AlignmentStatus 已经是 TC_ALIGNMENT_COMPLETED，对齐被跳过，
-                 * 导致 wMecAngle 保持速度模式运行时累积的巨大值，编码器零点丢失。
-                 * 这里在对齐状态残留时将其重置，触发下一次 RUN 状态进入时重新寻零。 */
-                if (mode == 1 && pPosCtrl[0] && pPosCtrl[0]->AlignmentStatus == TC_ALIGNMENT_COMPLETED)
-                {
-                    pPosCtrl[0]->AlignmentStatus = TC_AWAITING_FOR_ALIGNMENT;
-                    pPosCtrl[0]->EncoderAbsoluteAligned = false;
-                    pPosCtrl[0]->PositionControlRegulation = DISABLE;
-                    printf("[CIA402] Re-alignment requested for position mode\r\n");
-                }
                 if (MC_StartMotor1())
                     printf("[CIA402] Motor starting...\r\n");
             }
