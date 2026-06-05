@@ -23,6 +23,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "trajectory_ctrl.h"
 #include "speed_pos_fdbk.h"
+#include "pid_regulator.h"
 
 /** @addtogroup MCSDK
   * @{
@@ -428,6 +429,10 @@ void TC_EncAlignmentCommand(PosCtrl_Handle_t *pHandle)
     {
       /* If index is supported start the search of the zero */
       pHandle->EncoderAbsoluteAligned = false;
+      /* 【修复】启动对齐ramp前清零PID积分，防止历史累积（如手动旋转期间
+       * 位置环使能但PWM关闭导致的积分饱和）使电机无法正常跟踪对齐轨迹，
+       * 找不到Z脉冲而持续旋转。 */
+      PID_SetIntegralTerm(pHandle->PIDPosRegulator, 0);
       wMecAngleRef = SPD_GetMecAngle(STC_GetSpeedSensor(pHandle->pSTC));
       TC_MoveCommand(pHandle, (float)(wMecAngleRef) / RADTOS16, Z_ALIGNMENT_NB_ROTATION, Z_ALIGNMENT_DURATION);
       pHandle->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
@@ -436,6 +441,9 @@ void TC_EncAlignmentCommand(PosCtrl_Handle_t *pHandle)
     {
       /* If index is not supprted set the alignment angle as zero reference */
       pHandle->pENC->_Super.wMecAngle = 0;
+      pHandle->Theta = 0.0f;  /* 【修复】wMecAngle 已清零，Theta 也必须同步清零，
+                                 否则位置环误差 = Theta_old*RADTOS16 - 0，导致电机暴冲 */
+      PID_SetIntegralTerm(pHandle->PIDPosRegulator, 0);
       pHandle->AlignmentStatus = TC_ALIGNMENT_COMPLETED;
       pHandle->PositionCtrlStatus = TC_READY_FOR_COMMAND;
       pHandle->PositionControlRegulation = ENABLE;
@@ -479,6 +487,11 @@ void TC_EncoderReset(PosCtrl_Handle_t *pHandle)
     pHandle->AlignmentStatus = TC_ALIGNMENT_COMPLETED;
     pHandle->PositionCtrlStatus = TC_READY_FOR_COMMAND;
     pHandle->Theta = 0.0f;
+    /* 【修复】清除位置PID积分项，防止对齐ramp期间累积的积分导致
+     * 电机在零点无法停止（积分饱和 / integral windup）。
+     * 对齐ramp被中断时积分器仍保留非零输出，即使误差为0，
+     * Ki*∫e dt 也会产生持续扭矩使电机继续旋转。 */
+    PID_SetIntegralTerm(pHandle->PIDPosRegulator, 0);
     ENC_SetMecAngle(pHandle->pENC, pHandle->MecAngleOffset);
   }
   else
