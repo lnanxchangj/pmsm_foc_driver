@@ -103,7 +103,7 @@ class CanMasterWindow(QMainWindow):
         
         param_layout.addWidget(QLabel("加速度 (0x6083, ms):"), 1, 0)
         self.profile_acc = QSpinBox()
-        self.profile_acc.setRange(10, 10000); self.profile_acc.setValue(1000)
+        self.profile_acc.setRange(10, 10000); self.profile_acc.setValue(3000)
         param_layout.addWidget(self.profile_acc, 1, 1)
         self.btn_set_pacc = QPushButton("设置斜坡时间")
         self.btn_set_pacc.clicked.connect(self.set_profile_acceleration)

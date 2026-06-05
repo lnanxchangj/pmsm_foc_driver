@@ -46,14 +46,16 @@ def wait_tr(bus, label, timeout=10.0):
         time.sleep(0.5)
     print('--- Timeout ---')
     return False
-def perform_move(bus, target, is_rel, velocity, label):
-    print('Executing: %s (Target=%d, Rel=%s, Vel=%d RPM)' % (label, target, is_rel, velocity))
-    sdo_write(bus, 0x6081, 0, velocity * 1000)
+def perform_move(bus, target, is_rel, velocity_rpm, label):
+    print('Executing: %s (Target=%d, Rel=%s, Vel=%d RPM)' % (label, target, is_rel, velocity_rpm))
+    # NEW UNITS: 0x6081 is counts/s
+    vel_counts_s = int(velocity_rpm * 4000 / 60)
+    sdo_write(bus, 0x6081, 0, vel_counts_s)
     sdo_write(bus, 0x607A, 0, target & 0xFFFFFFFF)
     cw = 0x000F | (0x0040 if is_rel else 0x0000)
-    send_cw(bus, cw | 0x0010) # Set New Setpoint
+    send_cw(bus, cw | 0x0010)
     time.sleep(0.1)
-    send_cw(bus, cw) # Clear New Setpoint
+    send_cw(bus, cw)
     return wait_tr(bus, label)
 def main():
     try:
@@ -62,7 +64,6 @@ def main():
         send_cw(bus, 0x0006); time.sleep(0.1)
         send_cw(bus, 0x0007); time.sleep(0.1)
         send_cw(bus, 0x000F); time.sleep(1.0)
-        # Use Absolute positions for reliability
         perform_move(bus, 8000, False, 300, 'Move 1: To 2 Turns (8000)')
         print('Wait 5s...')
         time.sleep(5.0)

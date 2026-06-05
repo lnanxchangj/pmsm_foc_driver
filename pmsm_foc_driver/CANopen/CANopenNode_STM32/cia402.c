@@ -352,6 +352,7 @@ void CIA402_Init(void)
     OD_RAM.x6041_statusword = SW_NOT_READY_TO_SWITCH_ON_VAL;
     OD_RAM.x6060_modesOfOperation = 1;
     OD_RAM.x6081_profileVelocity = 60;
+    OD_RAM.x6083_profileAcceleration = 3000;
     s_state = CIA402_NOT_READY_TO_SWITCH_ON;
     s_pos_tracker_ready = false;
     s_pp_setpoint_pending = false;
