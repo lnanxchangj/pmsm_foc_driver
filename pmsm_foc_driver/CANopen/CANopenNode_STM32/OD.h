@@ -296,6 +296,7 @@ typedef struct {
         uint32_t COB_IDClientToServerRx;
         uint32_t COB_IDServerToClientTx;
     } x1200_SDOServerParameter;
+    uint32_t x2000_manufacturerParameter;
     uint16_t x2001_controlwordMirror;
     uint16_t x2002_statuswordMirror;
     uint16_t x6040_controlword;
@@ -374,23 +375,24 @@ extern OD_ATTR_OD OD_t *OD;
 #define OD_ENTRY_H1A01 &OD->list[36]
 #define OD_ENTRY_H1A02 &OD->list[37]
 #define OD_ENTRY_H1A03 &OD->list[38]
-#define OD_ENTRY_H2001 &OD->list[39]
-#define OD_ENTRY_H2002 &OD->list[40]
-#define OD_ENTRY_H6040 &OD->list[41]
-#define OD_ENTRY_H6041 &OD->list[42]
-#define OD_ENTRY_H6060 &OD->list[43]
-#define OD_ENTRY_H6061 &OD->list[44]
-#define OD_ENTRY_H6064 &OD->list[45]
-#define OD_ENTRY_H606C &OD->list[46]
-#define OD_ENTRY_H6071 &OD->list[47]
-#define OD_ENTRY_H6077 &OD->list[48]
-#define OD_ENTRY_H607A &OD->list[49]
-#define OD_ENTRY_H6081 &OD->list[50]
-#define OD_ENTRY_H6083 &OD->list[51]
-#define OD_ENTRY_H6098 &OD->list[52]
-#define OD_ENTRY_H6099 &OD->list[53]
-#define OD_ENTRY_H609A &OD->list[54]
-#define OD_ENTRY_H60FF &OD->list[55]
+#define OD_ENTRY_H2000 &OD->list[39]
+#define OD_ENTRY_H2001 &OD->list[40]
+#define OD_ENTRY_H2002 &OD->list[41]
+#define OD_ENTRY_H6040 &OD->list[42]
+#define OD_ENTRY_H6041 &OD->list[43]
+#define OD_ENTRY_H6060 &OD->list[44]
+#define OD_ENTRY_H6061 &OD->list[45]
+#define OD_ENTRY_H6064 &OD->list[46]
+#define OD_ENTRY_H606C &OD->list[47]
+#define OD_ENTRY_H6071 &OD->list[48]
+#define OD_ENTRY_H6077 &OD->list[49]
+#define OD_ENTRY_H607A &OD->list[50]
+#define OD_ENTRY_H6081 &OD->list[51]
+#define OD_ENTRY_H6083 &OD->list[52]
+#define OD_ENTRY_H6098 &OD->list[53]
+#define OD_ENTRY_H6099 &OD->list[54]
+#define OD_ENTRY_H609A &OD->list[55]
+#define OD_ENTRY_H60FF &OD->list[56]
 
 
 /*******************************************************************************
@@ -435,19 +437,21 @@ extern OD_ATTR_OD OD_t *OD;
 #define OD_ENTRY_H1A01_TPDOMappingParameter &OD->list[36]
 #define OD_ENTRY_H1A02_TPDOMappingParameter &OD->list[37]
 #define OD_ENTRY_H1A03_TPDOMappingParameter &OD->list[38]
-#define OD_ENTRY_H2001_controlwordMirror &OD->list[39]
-#define OD_ENTRY_H2002_statuswordMirror &OD->list[40]
-#define OD_ENTRY_H6040_controlword &OD->list[41]
-#define OD_ENTRY_H6041_statusword &OD->list[42]
-#define OD_ENTRY_H6060_modesOfOperation &OD->list[43]
-#define OD_ENTRY_H6061_modesOfOperationDisplay &OD->list[44]
-#define OD_ENTRY_H6064_positionActualValue &OD->list[45]
-#define OD_ENTRY_H606C_velocityActualValue &OD->list[46]
-#define OD_ENTRY_H6071_targetTorque &OD->list[47]
-#define OD_ENTRY_H6077_torqueActualValue &OD->list[48]
-#define OD_ENTRY_H607A_targetPosition &OD->list[49]
-#define OD_ENTRY_H6081_profileVelocity &OD->list[50]
-#define OD_ENTRY_H60FF_targetVelocity &OD->list[51]
+#define OD_ENTRY_H2000_manufacturerParameter &OD->list[39]
+#define OD_ENTRY_H2001_controlwordMirror &OD->list[40]
+#define OD_ENTRY_H2002_statuswordMirror &OD->list[41]
+#define OD_ENTRY_H6040_controlword &OD->list[42]
+#define OD_ENTRY_H6041_statusword &OD->list[43]
+#define OD_ENTRY_H6060_modesOfOperation &OD->list[44]
+#define OD_ENTRY_H6061_modesOfOperationDisplay &OD->list[45]
+#define OD_ENTRY_H6064_positionActualValue &OD->list[46]
+#define OD_ENTRY_H606C_velocityActualValue &OD->list[47]
+#define OD_ENTRY_H6071_targetTorque &OD->list[48]
+#define OD_ENTRY_H6077_torqueActualValue &OD->list[49]
+#define OD_ENTRY_H607A_targetPosition &OD->list[50]
+#define OD_ENTRY_H6081_profileVelocity &OD->list[51]
+#define OD_ENTRY_H60FF_targetVelocity &OD->list[52]
+
 
 
 /*******************************************************************************

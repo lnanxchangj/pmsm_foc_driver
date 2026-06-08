@@ -21,7 +21,7 @@
     OD data initialization of all groups
 *******************************************************************************/
 OD_ATTR_PERSIST_COMM OD_PERSIST_COMM_t OD_PERSIST_COMM = {
-    .x1000_deviceType = 0x00000000,
+    .x1000_deviceType = 0x00020192, /* CiA 402 Servo Drive */
     .x1005_COB_ID_SYNCMessage = 0x00000080,
     .x1006_communicationCyclePeriod = 0x00000000,
     .x1007_synchronousWindowLength = 0x00000000,
@@ -33,10 +33,10 @@ OD_ATTR_PERSIST_COMM OD_PERSIST_COMM_t OD_PERSIST_COMM = {
     .x1017_producerHeartbeatTime = 0x03E8,
     .x1018_identity = {
         .highestSub_indexSupported = 0x04,
-        .vendor_ID = 0x00000000,
-        .productCode = 0x00000000,
-        .revisionNumber = 0x00000000,
-        .serialNumber = 0x00000000
+        .vendor_ID = 0x00000123,     /* Example Vendor ID */
+        .productCode = 0x00000402,   /* CiA 402 Product Code */
+        .revisionNumber = 0x00010000, /* V1.0.0 */
+        .serialNumber = 0x00000001    /* Serial 1 */
     },
     .x1019_synchronousCounterOverflowValue = 0x00,
     .x1280_SDOClientParameter = {
@@ -253,6 +253,7 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .COB_IDClientToServerRx = 0x00000600,
         .COB_IDServerToClientTx = 0x00000580
     },
+    .x2000_manufacturerParameter = 0x00000000,
     .x2001_controlwordMirror = 0x0000,
     .x2002_statuswordMirror = 0x0000,
     .x6040_controlword = 0x0000,
@@ -318,6 +319,7 @@ typedef struct {
     OD_obj_record_t o_1A01_TPDOMappingParameter[9];
     OD_obj_record_t o_1A02_TPDOMappingParameter[9];
     OD_obj_record_t o_1A03_TPDOMappingParameter[9];
+    OD_obj_var_t o_2000_manufacturerParameter;
     OD_obj_var_t o_2001_controlwordMirror;
     OD_obj_var_t o_2002_statuswordMirror;
     OD_obj_var_t o_6040_controlword;
@@ -1448,6 +1450,11 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .dataLength = 4
         }
     },
+    .o_2000_manufacturerParameter = {
+        .dataOrig = &OD_RAM.x2000_manufacturerParameter,
+        .attribute = ODA_SDO_RW | ODA_MB,
+        .dataLength = 4
+    },
     .o_2001_controlwordMirror = {
         .dataOrig = &OD_RAM.x2001_controlwordMirror,
         .attribute = ODA_SDO_R | ODA_MB,
@@ -1582,6 +1589,7 @@ static OD_ATTR_OD OD_entry_t ODList[] = {
     {0x1A01, 0x09, ODT_REC, &ODObjs.o_1A01_TPDOMappingParameter, NULL},
     {0x1A02, 0x09, ODT_REC, &ODObjs.o_1A02_TPDOMappingParameter, NULL},
     {0x1A03, 0x09, ODT_REC, &ODObjs.o_1A03_TPDOMappingParameter, NULL},
+    {0x2000, 0x01, ODT_VAR, &ODObjs.o_2000_manufacturerParameter, NULL},
     {0x2001, 0x01, ODT_VAR, &ODObjs.o_2001_controlwordMirror, NULL},
     {0x2002, 0x01, ODT_VAR, &ODObjs.o_2002_statuswordMirror, NULL},
     {0x6040, 0x01, ODT_VAR, &ODObjs.o_6040_controlword, NULL},
