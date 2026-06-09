@@ -204,6 +204,8 @@ static void CIA402_HomingStart(void)
     float_t hm_speed_rpm = (float_t)OD_RAM.x6099_homingSpeeds[1];  /* sub2: 搜索零位速度 */
     if (hm_speed_rpm < 1.0f)
         hm_speed_rpm = 60.0f;  /* 默认 60 RPM */
+    if (hm_speed_rpm > 500.0f)
+        hm_speed_rpm = 500.0f; /* 最大 500 RPM，防止字节序错误导致暴冲 */
     float_t hm_speed_rads = (hm_speed_rpm * CIA402_2PI) / 60.0f;
 
     /* 搜索圈数: 保证能在 1 圈内找到 Z 脉冲 */
