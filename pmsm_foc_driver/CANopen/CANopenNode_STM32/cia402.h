@@ -62,6 +62,23 @@ typedef enum {
 #define SW_INTERNAL_LIMIT     (1u << 11)
 #define SW_SETPOINT_ACK       (1u << 12)  /* PP模式应答 */
 #define SW_HOMING_ATTAINED    (1u << 12)  /* HM模式回零完成 */
+#define SW_HOMING_ERROR       (1u << 13)  /* HM模式回零错误 */
+
+/* CiA 402 回零模式状态字 bits 13/12/10 编码 (表 7.3.3)
+ * 13 12 10 | 含义
+ *  0  0  0 | 回零程序正在进行中
+ *  0  0  1 | 回零程序中断或未启动
+ *  0  1  0 | 已实现回零，但目标未到达
+ *  0  1  1 | 回零程序成功完成
+ *  1  0  0 | 发生回零错误，速度不为0
+ *  1  0  1 | 发生回零错误，速度为0
+ */
+#define HM_SW_IN_PROGRESS      (0u)                    /* bit13=0,bit12=0,bit10=0 */
+#define HM_SW_NOT_STARTED      (SW_TARGET_REACHED)     /* bit13=0,bit12=0,bit10=1 */
+#define HM_SW_ATTAINED         (SW_HOMING_ATTAINED)    /* bit13=0,bit12=1,bit10=0 */
+#define HM_SW_COMPLETED        (SW_HOMING_ATTAINED | SW_TARGET_REACHED) /* 13=0,12=1,10=1 */
+#define HM_SW_ERR_SPEED        (SW_HOMING_ERROR)       /* bit13=1,bit12=0,bit10=0 */
+#define HM_SW_ERR_STOP         (SW_HOMING_ERROR | SW_TARGET_REACHED)    /* 13=1,12=0,10=1 */
 
 /* ============================================================
  * 状态字掩码 (低7位表示状态)
@@ -102,6 +119,26 @@ typedef enum {
  * 1000 = NOMINAL_CURRENT_A
  */
 #define CIA402_TRQ_SCALE    1000.0f
+
+/* ============================================================
+ * 回零模式 (Homing Mode) 子状态
+ * ============================================================ */
+typedef enum {
+    CIA402_HM_IDLE       = 0,   /* 回零空闲：等待控制字 bit4 上升沿 */
+    CIA402_HM_SEARCHING  = 1,   /* 正在搜索 Z 脉冲 */
+    CIA402_HM_COMPLETED  = 2,   /* 回零完成 */
+    CIA402_HM_ERROR      = 3,   /* 回零失败 (超时或无 Z 信号) */
+    CIA402_HM_HALTED     = 4,   /* 回零被暂停 (控制字 bit8=1) */
+} CIA402_HomingState_t;
+
+/* ============================================================
+ * 回零方法定义 (0x6098)
+ * ============================================================ */
+#define HM_METHOD_Z_INDEX       35   /* 搜索 Z 脉冲，设置编码器 = 0 */
+#define HM_METHOD_Z_INDEX_ABS   37   /* 搜索 Z 脉冲，设置当前位置 = 0x607C Home Offset */
+
+/* 默认回零超时: 10 秒 */
+#define HOMING_TIMEOUT_MS       10000
 
 /* ============================================================
  * 容差窗口 (Windows) - 模拟 0x6067/0x606D

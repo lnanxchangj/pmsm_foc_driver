@@ -33,6 +33,12 @@ static bool s_pos_tracker_ready = false;
 /* 窗口逻辑计时器 */
 static uint32_t s_target_reached_timer = 0;
 
+/* 回零模式状态 */
+static CIA402_HomingState_t s_homing_state = CIA402_HM_IDLE;
+static uint32_t s_homing_start_tick = 0;
+static int8_t s_homing_method = 35;      /* 缓存 0x6098 */
+static bool s_homing_halted = false;     /* 控制字 bit8 暂停标志 */
+
 #define CIA402_PI 3.141592653589793f
 #define CIA402_2PI 6.283185307179586f
 
@@ -44,6 +50,11 @@ static uint32_t s_target_reached_timer = 0;
 /* ============================================================
  * 内部辅助函数
  * ============================================================ */
+
+/* 前向声明 */
+static void CIA402_HomingStart(void);
+static void CIA402_HomingStop(void);
+
 static uint16_t CIA402_BuildStatusword(void)
 {
     uint16_t sw = 0u;
@@ -83,9 +94,48 @@ static uint16_t CIA402_BuildStatusword(void)
     if (MC_GetCurrentFaultsMotor1() != 0u)
         sw |= SW_WARNING;
 
-    /* 握手应答 */
+    /* 握手应答 (PP 模式) */
     if (s_pp_setpoint_pending)
         sw |= SW_SETPOINT_ACK;
+
+    /* ============================================================
+     * 回零模式状态字编码 (CiA 402 表 7.3.3)
+     * bits 13/12/10 的组合表达回零状态
+     * ============================================================ */
+    if (OD_RAM.x6060_modesOfOperation == 6)
+    {
+        switch (s_homing_state)
+        {
+        case CIA402_HM_IDLE:
+            /* 模式已选但未启动回零 → 中断或未启动 */
+            sw |= HM_SW_NOT_STARTED;
+            break;
+        case CIA402_HM_SEARCHING:
+            /* 回零进行中 → 不置任何位 */
+            /* sw already has bits 13=0,12=0,10=0 after state base */
+            break;
+        case CIA402_HM_HALTED:
+            /* 回零被暂停 → 目标未到达 */
+            sw |= HM_SW_NOT_STARTED;
+            break;
+        case CIA402_HM_COMPLETED:
+            /* 回零成功完成 */
+            sw |= HM_SW_COMPLETED;
+            break;
+        case CIA402_HM_ERROR:
+            /* 回零错误：检查速度是否为0 */
+            {
+                float_t spd = MC_GetAverageMecSpeedMotor1_F();
+                if (fabsf(spd) < 1.0f)
+                    sw |= HM_SW_ERR_STOP;   /* 13=1,12=0,10=1: 错误，速度为0 */
+                else
+                    sw |= HM_SW_ERR_SPEED;  /* 13=1,12=0,10=0: 错误，速度≠0 */
+            }
+            break;
+        default:
+            break;
+        }
+    }
 
     return sw;
 }
@@ -121,6 +171,148 @@ static void CIA402_UpdateActualValues(void)
     if (nominal < 0.1f)
         nominal = 1.0f;
     OD_RAM.x6077_torqueActualValue = (int16_t)((MC_GetIqdMotor1_F().q / nominal) * CIA402_TRQ_SCALE);
+}
+
+/* ============================================================
+ * 回零启动 —— 由控制字 bit4 (开始回零操作) 0→1 上升沿触发
+ * ============================================================ */
+static void CIA402_HomingStart(void)
+{
+    /* 读取回零参数 */
+    s_homing_method = OD_RAM.x6098_homingMethod;
+    if (s_homing_method == 0)
+        s_homing_method = 35;  /* 默认方法 35: 仅 Z 脉冲 */
+
+    /* 仅支持基于 Z 脉冲的方法 */
+    if (s_homing_method != 35 && s_homing_method != 37)
+    {
+        s_homing_state = CIA402_HM_ERROR;
+        printf("[CIA402] Homing ERROR: unsupported method %d\r\n", (int)s_homing_method);
+        return;
+    }
+
+    /* 禁用位置环，回零由 TC_EncAlignmentCommand 的 ramp 控制 */
+    if (pPosCtrl[0])
+        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+
+    /* 重置对齐状态，触发 Z 脉冲搜索 ramp */
+    if (pPosCtrl[0])
+    {
+        /* 停掉可能正在运行的 ramp */
+        if (pSTC[0])
+            STC_StopRamp(pSTC[0]);
+
+        pPosCtrl[0]->AlignmentStatus = TC_AWAITING_FOR_ALIGNMENT;
+        TC_EncAlignmentCommand(pPosCtrl[0]);
+    }
+
+    s_homing_state = CIA402_HM_SEARCHING;
+    s_homing_start_tick = HAL_GetTick();
+    s_homing_halted = false;
+
+    printf("[CIA402] Homing STARTED: method=%d, speeds=[%lu,%lu], acc=%lu\r\n",
+           (int)s_homing_method,
+           (unsigned long)OD_RAM.x6099_homingSpeeds[0],
+           (unsigned long)OD_RAM.x6099_homingSpeeds[1],
+           (unsigned long)OD_RAM.x609A_homingAcceleration);
+}
+
+/* ============================================================
+ * 回零停止 (暂停或中断)
+ * ============================================================ */
+static void CIA402_HomingStop(void)
+{
+    if (pSTC[0])
+        STC_StopRamp(pSTC[0]);
+    s_homing_halted = true;
+    s_homing_state = CIA402_HM_HALTED;
+    printf("[CIA402] Homing HALTED\r\n");
+}
+
+/* ============================================================
+ * 回零过程监控 —— 在 OPERATION_ENABLED 每个周期检查
+ * ============================================================ */
+static void CIA402_HomingProcess(void)
+{
+    /* 处理控制字 bit8 (Halt) */
+    uint16_t cw = OD_RAM.x6040_controlword;
+    bool halt_requested = (cw & CW_HALT) != 0u;
+
+    if (halt_requested && s_homing_state == CIA402_HM_SEARCHING)
+    {
+        CIA402_HomingStop();
+        return;
+    }
+
+    if (!halt_requested && s_homing_state == CIA402_HM_HALTED)
+    {
+        /* 恢复回零：重新启动 Z 搜索 */
+        if (pPosCtrl[0])
+        {
+            pPosCtrl[0]->AlignmentStatus = TC_AWAITING_FOR_ALIGNMENT;
+            TC_EncAlignmentCommand(pPosCtrl[0]);
+        }
+        s_homing_state = CIA402_HM_SEARCHING;
+        s_homing_start_tick = HAL_GetTick();
+        s_homing_halted = false;
+        printf("[CIA402] Homing RESUMED\r\n");
+        return;
+    }
+
+    if (s_homing_state != CIA402_HM_SEARCHING)
+        return;
+
+    /* 检查超时 */
+    if (HAL_GetTick() - s_homing_start_tick > HOMING_TIMEOUT_MS)
+    {
+        s_homing_state = CIA402_HM_ERROR;
+        if (pSTC[0])
+            STC_StopRamp(pSTC[0]);
+        printf("[CIA402] Homing ERROR: timeout (>%d ms)\r\n", HOMING_TIMEOUT_MS);
+        return;
+    }
+
+    /* 检查对齐状态 */
+    if (pPosCtrl[0] == NULL)
+        return;
+
+    AlignStatus_t align = pPosCtrl[0]->AlignmentStatus;
+
+    if (align == TC_ALIGNMENT_COMPLETED)
+    {
+        /* Z 脉冲已找到，编码器已被 TC_EncoderReset (ISR) 清零 */
+
+        /* 应用原点偏置 (0x607C) */
+        int32_t home_offset = OD_RAM.x607C_homeOffset;
+        if (s_homing_method == 37 && home_offset != 0)
+        {
+            /* 方法 37: 原点偏置模式，将位置设置为 home offset */
+            s_continuous_pos_float = (float_t)(home_offset % MODULO_RANGE);
+            if (s_continuous_pos_float < 0.0f)
+                s_continuous_pos_float += (float_t)MODULO_RANGE;
+        }
+        else
+        {
+            /* 方法 35: 零点模式，位置归零 */
+            s_continuous_pos_float = 0.0f;
+        }
+
+        s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
+        s_target_pos_inc = (int32_t)(s_continuous_pos_float + 0.5f);
+        OD_RAM.x6064_positionActualValue = s_target_pos_inc;
+        OD_RAM.x607A_targetPosition = s_target_pos_inc;
+
+        s_homing_state = CIA402_HM_COMPLETED;
+        printf("[CIA402] Homing COMPLETED: pos=%ld, offset=%ld\r\n",
+               (long)s_target_pos_inc, (long)home_offset);
+    }
+    else if (align == TC_ALIGNMENT_ERROR)
+    {
+        s_homing_state = CIA402_HM_ERROR;
+        printf("[CIA402] Homing ERROR: Z-index not found (no Z signal or ramp failed)\r\n");
+    }
+    /* TC_ZERO_ALIGNMENT_START: 搜索 ramp 运行中，继续等待 */
+    /* TC_AWAITING_FOR_ALIGNMENT: 刚重置，等待 TC_PositionRegulation 启动 ramp */
 }
 
 static void CIA402_StateMachineProcess(void)
@@ -174,27 +366,21 @@ static void CIA402_StateMachineProcess(void)
             }
             else if (mc_state == RUN)
             {
-                /* 如果编码器 Z-index 对齐正在执行中（TC_MoveCommand 控制电机旋转
-                 * 寻找零点），必须等待对齐完成再进入 OPERATION_ENABLED。
-                 * 否则 MC_ProgramPositionCommandMotor1 会覆盖对齐 ramp 的
-                 * PositionCtrlStatus，中断寻零过程，导致零点丢失。 */
-                if (pPosCtrl[0] && pPosCtrl[0]->AlignmentStatus == TC_ZERO_ALIGNMENT_START)
-                {
-                    /* 对齐进行中 —— 维持 SWITCHED_ON，更新跟踪参考但不干预位置环 */
-                    s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
-                    s_continuous_pos_float = 0.0f;
-                    break;
-                }
-
-                /* 双零点同步法：保证物理寻零后的坐标偏移正确，避免初次起步的跳变与额外一圈 */
+                /* 初始化连续位置跟踪器 —— 从当前编码器值开始，不强制清零 */
                 s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
                 if (!s_pos_tracker_ready) {
-                    s_continuous_pos_float = 0.0f;
+                    /* 首次启动：基于编码器当前实际位置初始化（而非清零） */
+                    float_t init_pos_rad = MC_GetCurrentPosition1();
+                    s_continuous_pos_float = init_pos_rad * CIA402_POS_SCALE;
+                    while (s_continuous_pos_float >= (float_t)MODULO_RANGE)
+                        s_continuous_pos_float -= (float_t)MODULO_RANGE;
+                    while (s_continuous_pos_float < 0.0f)
+                        s_continuous_pos_float += (float_t)MODULO_RANGE;
                 }
                 s_pos_tracker_ready = true;
 
                 /* 根据模式初始化底层 */
-                if (mode == 1)
+                if (mode == 1) /* PP: 位置模式 —— 直接切换，不改编码器值 */
                 {
                     float_t sync_pos_rad = MC_GetCurrentPosition1();
                     MC_SetCtrlPositionAngle1(sync_pos_rad);
@@ -202,11 +388,10 @@ static void CIA402_StateMachineProcess(void)
                     {
                         pMCI[0]->pPosCtrl->PositionCtrlStatus = TC_READY_FOR_COMMAND;
                     }
-                    /* 使能位置环：放在最后，确保 Theta 已同步 */
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = ENABLE;
                 }
-                else if (mode == 3)
+                else if (mode == 3) /* PV: 速度模式 —— 直接切换，不改编码器值 */
                 {
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = DISABLE;
@@ -214,15 +399,26 @@ static void CIA402_StateMachineProcess(void)
                         STC_SetControlMode(pSTC[0], MCM_SPEED_MODE);
                     MC_ProgramSpeedRampMotor1_F(0.0f, 0.0f);
                 }
+                else if (mode == 6) /* HM: 回零模式 —— 等待控制字 bit4 启动 */
+                {
+                    /* 进入回零模式，但不立即开始。
+                     * 等待控制字 bit4 (开始回零操作) 0→1 转换。
+                     * 先禁用位置环，防止干扰。 */
+                    if (pPosCtrl[0])
+                        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+                    s_homing_state = CIA402_HM_IDLE;
+                    s_homing_halted = false;
+                    printf("[CIA402] ENABLED: Homing Mode - waiting for start (bit4)\r\n");
+                }
 
                 s_last_target_vel = 0;
                 s_last_mode = mode;
-                
-                /* 保持当前的实际位置，并将目标位置同步到当前位置，避免跳变 */
+
+                /* 将目标位置吸附到当前实际位置，避免跳变 */
                 CIA402_UpdateActualValues();
                 s_target_pos_inc = OD_RAM.x6064_positionActualValue;
                 OD_RAM.x607A_targetPosition = OD_RAM.x6064_positionActualValue;
-                
+
                 s_state = CIA402_OPERATION_ENABLED;
                 printf("[CIA402] ENABLED: Mode %d Ready\r\n", mode);
             }
@@ -234,6 +430,7 @@ static void CIA402_StateMachineProcess(void)
         {
             printf("[CIA402] Disable Voltage from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
+            s_homing_state = CIA402_HM_IDLE;
             s_state = CIA402_SWITCH_ON_DISABLED;
         }
         else if ((cw & 0x0004) == 0) /* Quick Stop (Transition 11) */
@@ -249,6 +446,9 @@ static void CIA402_StateMachineProcess(void)
                 uint16_t ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
                 if (ramp_ms < 10) ramp_ms = 10;
                 MC_ProgramSpeedRampMotor1_F(0.0f, ramp_ms);
+            } else if (mode == 6) {
+                MC_ProgramSpeedRampMotor1_F(0.0f, 100);
+                s_homing_state = CIA402_HM_IDLE;
             }
             s_state = CIA402_QUICK_STOP_ACTIVE;
         }
@@ -256,59 +456,101 @@ static void CIA402_StateMachineProcess(void)
         {
             printf("[CIA402] Shutdown from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
+            s_homing_state = CIA402_HM_IDLE;
             s_state = CIA402_READY_TO_SWITCH_ON;
         }
         else if ((cw & 0x000F) == 0x0007) /* Disable Operation (Transition 5) */
         {
             printf("[CIA402] Disable Operation from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
+            s_homing_state = CIA402_HM_IDLE;
             s_state = CIA402_SWITCHED_ON;
         }
         else
         {
-            /* 动态模式切换 */
+            /* ---- 动态模式切换 ---- */
             if (mode != s_last_mode)
             {
-                if (mode == 1)
+                if (mode == 1) /* PP: 位置模式 */
                 {
                     float_t sync_pos_rad = MC_GetCurrentPosition1();
                     MC_SetCtrlPositionAngle1(sync_pos_rad);
-                    
+
                     if (pMCI[0]->pPosCtrl)
                     {
                         pMCI[0]->pPosCtrl->PositionCtrlStatus = TC_READY_FOR_COMMAND;
                     }
-                    
-                    /* 保持 CIA402 连续位置跟踪不归零，仅更新基准 */
+
                     s_last_mcsdk_pos_rad = sync_pos_rad;
-                    
-                    /* 更新最新的实际位置，并吸附目标位置避免跳变 */
+
                     CIA402_UpdateActualValues();
                     s_target_pos_inc = OD_RAM.x6064_positionActualValue;
                     OD_RAM.x607A_targetPosition = OD_RAM.x6064_positionActualValue;
-                    
-                    /* 最后使能位置环，确保 Theta 已同步完毕 */
+
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = ENABLE;
+
+                    s_homing_state = CIA402_HM_IDLE;
                     printf("[CIA402] Mode Switched to PP (1)\r\n");
                 }
-                else if (mode == 3)
+                else if (mode == 3) /* PV: 速度模式 */
                 {
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = DISABLE;
                     if (pSTC[0])
                         STC_SetControlMode(pSTC[0], MCM_SPEED_MODE);
                     MC_ProgramSpeedRampMotor1_F(0.0f, 0.0f);
+
+                    s_homing_state = CIA402_HM_IDLE;
                     printf("[CIA402] Mode Switched to PV (3) - Pos Loop Disabled\r\n");
+                }
+                else if (mode == 6) /* HM: 回零模式 —— 等待控制字 bit4 启动 */
+                {
+                    if (pPosCtrl[0])
+                        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+                    s_homing_state = CIA402_HM_IDLE;
+                    s_homing_halted = false;
+                    printf("[CIA402] Mode Switched to HM (6) - waiting for start (bit4)\r\n");
                 }
                 s_last_mode = mode;
             }
-            if (OD_RAM.x6060_modesOfOperation == 1)
+
+            /* ---- 回零模式：监控控制字 bit4 (开始回零操作) ---- */
+            if (mode == 6)
+            {
+                bool bit4_now  = (cw & CW_NEW_SETPOINT) != 0u;  /* HM 模式中 bit4 = 开始回零 */
+                bool bit4_prev = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
+
+                /* bit4 上升沿 → 启动回零 (仅在 IDLE 或 ERROR 状态可启动) */
+                if (bit4_now && !bit4_prev)
+                {
+                    if (s_homing_state == CIA402_HM_IDLE ||
+                        s_homing_state == CIA402_HM_ERROR ||
+                        s_homing_state == CIA402_HM_HALTED)
+                    {
+                        CIA402_HomingStart();
+                    }
+                }
+
+                /* bit4 下降沿 → 中断回零 (如果正在进行中) */
+                if (!bit4_now && bit4_prev)
+                {
+                    if (s_homing_state == CIA402_HM_SEARCHING)
+                    {
+                        CIA402_HomingStop();
+                    }
+                }
+
+                /* 回零过程监控 */
+                CIA402_HomingProcess();
+            }
+
+            /* ---- PP 模式：set-point 握手 ---- */
+            if (mode == 1)
             {
                 bool new_setpoint = (cw & CW_NEW_SETPOINT) != 0u;
                 bool last_setpoint = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
 
-                /* 握手逻辑：上升沿触发 */
                 if (new_setpoint && !last_setpoint)
                 {
                     int32_t current_inc = (int32_t)OD_RAM.x6064_positionActualValue;
@@ -330,7 +572,6 @@ static void CIA402_StateMachineProcess(void)
 
                     float_t diff_rad = (float_t)diff_inc / CIA402_POS_SCALE;
 
-                    /* 核心修复：强制底层状态进入 READY，确保新指令不被丢弃 */
                     if (pMCI[0]->pPosCtrl)
                     {
                         pMCI[0]->pPosCtrl->PositionCtrlStatus = TC_READY_FOR_COMMAND;
@@ -347,40 +588,40 @@ static void CIA402_StateMachineProcess(void)
 
                     s_target_pos_inc = target_inc;
                     s_target_reached_timer = 0;
-                    s_pp_setpoint_pending = true; // 设置 Ack
+                    s_pp_setpoint_pending = true;
 
                     MC_ProgramPositionCommandMotor1(final_target_rad, dur);
                     printf("[CIA402] PP %s: To %d, Dur=%.3fs\r\n",
                            (cw & CW_ABS_REL) ? "REL" : "ABS", (int)target_inc, dur);
                 }
 
-                /* 握手逻辑：Master 撤回 Bit 4 后，驱动器才撤回 Bit 12 */
                 if (!new_setpoint)
                     s_pp_setpoint_pending = false;
             }
-            else if (mode == 3) /* PV Mode */
+
+            /* ---- PV 模式：速度控制 ---- */
+            if (mode == 3)
             {
                 int32_t target_vel = OD_RAM.x60FF_targetVelocity;
                 if (target_vel != s_last_target_vel)
                 {
                     float_t target_rpm = (float_t)target_vel / CIA402_VEL_SCALE;
-                    
-                    /* 适配 0x6083 为加速度单元 (默认 RPM/s) */
+
                     float_t acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
                     if (acc_val < 1.0f)
-                        acc_val = 1000.0f; // 默认 1000 RPM/s，防止除零
+                        acc_val = 1000.0f;
 
                     float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
                     float_t diff_rpm = fabsf(target_rpm - current_rpm);
-                    
-                    /* 动态计算斜坡时间 (ms): ramp_ms = (|dv| / a) * 1000 */
+
                     uint16_t ramp_ms = (uint16_t)((diff_rpm / acc_val) * 1000.0f);
                     if (ramp_ms < 10)
-                        ramp_ms = 10; // 最小允许10ms斜坡时间
+                        ramp_ms = 10;
 
                     MC_ProgramSpeedRampMotor1_F(target_rpm, ramp_ms);
                     s_last_target_vel = target_vel;
-                    printf("[CIA402] PV Target: %d RPM, Acc: %d, Ramp: %d ms\r\n", (int)target_vel, (int)OD_RAM.x6083_profileAcceleration, ramp_ms);
+                    printf("[CIA402] PV Target: %d RPM, Acc: %d, Ramp: %d ms\r\n",
+                           (int)target_vel, (int)OD_RAM.x6083_profileAcceleration, ramp_ms);
                 }
             }
         }
@@ -433,6 +674,10 @@ void CIA402_Init(void)
     s_pos_tracker_ready = false;
     s_pp_setpoint_pending = false;
     s_cw_prev = 0u;
+    s_homing_state = CIA402_HM_IDLE;
+    s_homing_start_tick = 0;
+    s_homing_method = 35;
+    s_homing_halted = false;
 }
 
 void CIA402_Process(void)
@@ -442,6 +687,7 @@ void CIA402_Process(void)
     uint16_t sw = CIA402_BuildStatusword();
     int8_t mode = OD_RAM.x6060_modesOfOperation;
     bool reached = false;
+
     if (mode == 1)
     {
         int32_t diff = (int32_t)OD_RAM.x6064_positionActualValue - s_target_pos_inc;
@@ -451,6 +697,12 @@ void CIA402_Process(void)
             diff += MODULO_RANGE;
         reached = (abs(diff) <= POS_WINDOW_DEFAULT) && (!s_pp_setpoint_pending);
     }
+    else if (mode == 6)
+    {
+        /* 回零完成视为 target reached (已在 BuildStatusword 中编码) */
+        reached = (s_homing_state == CIA402_HM_COMPLETED);
+    }
+
     if (reached)
     {
         if (s_target_reached_timer < WINDOW_TIME_MS)
@@ -464,14 +716,16 @@ void CIA402_Process(void)
     }
 
     OD_RAM.x6041_statusword = sw;
+
     static uint32_t last_log = 0;
     if (HAL_GetTick() - last_log > 500)
     {
         last_log = HAL_GetTick();
-        /* 增加对底层算法状态的日志输出 */
         int mcsdk_pos_status = (pMCI[0]->pPosCtrl) ? pMCI[0]->pPosCtrl->PositionCtrlStatus : -1;
-        printf("[CIA402] State:%d SW:0x%04X Act:%d Tar:%d PS:%d\r\n",
-               (int)s_state, sw, (int)OD_RAM.x6064_positionActualValue, (int)s_target_pos_inc, mcsdk_pos_status);
+        int align_status = (pMCI[0]->pPosCtrl) ? pMCI[0]->pPosCtrl->AlignmentStatus : -1;
+        printf("[CIA402] State:%d SW:0x%04X Act:%d Tar:%d PS:%d AS:%d HM:%d\r\n",
+               (int)s_state, sw, (int)OD_RAM.x6064_positionActualValue, (int)s_target_pos_inc,
+               mcsdk_pos_status, align_status, (int)s_homing_state);
     }
     s_cw_prev = OD_RAM.x6040_controlword;
 }
