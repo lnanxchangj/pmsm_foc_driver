@@ -88,9 +88,9 @@ OD_ATTR_PERSIST_COMM OD_PERSIST_COMM_t OD_PERSIST_COMM = {
         .eventTimer = 0x0000
     },
     .x1600_RPDOMappingParameter = {
-        .numberOfMappedApplicationObjectsInPDO = 0x02,
+        .numberOfMappedApplicationObjectsInPDO = 0x01,
         .applicationObject1 = 0x60400010,
-        .applicationObject2 = 0x60FF0020,
+        .applicationObject2 = 0x00000000,
         .applicationObject3 = 0x00000000,
         .applicationObject4 = 0x00000000,
         .applicationObject5 = 0x00000000,
