@@ -143,16 +143,29 @@ static void CIA402_StateMachineProcess(void)
         if (mc_state != ICLWAIT && mc_state != OFFSET_CALIB && mc_state != CHARGE_BOOT_CAP)
             s_state = CIA402_SWITCH_ON_DISABLED;
         break;
+
     case CIA402_SWITCH_ON_DISABLED:
-        if ((cw & 0x0007) == 0x0006)
+        if ((cw & 0x0006) == 0x0006 && (cw & 0x0001) == 0) /* Shutdown (Transition 2) */
             s_state = CIA402_READY_TO_SWITCH_ON;
         break;
+
     case CIA402_READY_TO_SWITCH_ON:
-        if ((cw & 0x0007) == 0x0007)
+        if ((cw & 0x0002) == 0) /* Disable Voltage (Transition 7) */
+            s_state = CIA402_SWITCH_ON_DISABLED;
+        else if ((cw & 0x0006) == 0x0002) /* Quick Stop (Transition 7) */
+            s_state = CIA402_SWITCH_ON_DISABLED;
+        else if ((cw & 0x000F) == 0x0007) /* Switch On (Transition 3) */
             s_state = CIA402_SWITCHED_ON;
         break;
+
     case CIA402_SWITCHED_ON:
-        if ((cw & 0x000F) == 0x000F)
+        if ((cw & 0x0002) == 0) /* Disable Voltage (Transition 10) */
+            s_state = CIA402_SWITCH_ON_DISABLED;
+        else if ((cw & 0x0006) == 0x0002) /* Quick Stop (Transition 10) */
+            s_state = CIA402_SWITCH_ON_DISABLED;
+        else if ((cw & 0x000F) == 0x0006) /* Shutdown (Transition 6) */
+            s_state = CIA402_READY_TO_SWITCH_ON;
+        else if ((cw & 0x000F) == 0x000F) /* Enable Operation (Transition 4) */
         {
             if (mc_state == IDLE)
             {
@@ -215,10 +228,39 @@ static void CIA402_StateMachineProcess(void)
             }
         }
         break;
+
     case CIA402_OPERATION_ENABLED:
-        if ((cw & 0x000F) != 0x000F)
+        if ((cw & 0x0002) == 0) /* Disable Voltage (Transition 9) */
         {
-            printf("[CIA402] Disabling from OPERATION_ENABLED. CW: 0x%04X, MC State: %d\r\n", cw, mc_state);
+            printf("[CIA402] Disable Voltage from OPERATION_ENABLED\r\n");
+            MC_StopMotor1();
+            s_state = CIA402_SWITCH_ON_DISABLED;
+        }
+        else if ((cw & 0x0004) == 0) /* Quick Stop (Transition 11) */
+        {
+            printf("[CIA402] Quick Stop from OPERATION_ENABLED\r\n");
+            if (pPosCtrl[0] && mode == 1) {
+                float_t cur_pos = MC_GetCurrentPosition1();
+                MC_ProgramPositionCommandMotor1(cur_pos, 0.1f);
+            } else if (mode == 3) {
+                float_t acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
+                if (acc_val < 1.0f) acc_val = 1000.0f;
+                float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
+                uint16_t ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
+                if (ramp_ms < 10) ramp_ms = 10;
+                MC_ProgramSpeedRampMotor1_F(0.0f, ramp_ms);
+            }
+            s_state = CIA402_QUICK_STOP_ACTIVE;
+        }
+        else if ((cw & 0x000F) == 0x0006) /* Shutdown (Transition 8) */
+        {
+            printf("[CIA402] Shutdown from OPERATION_ENABLED\r\n");
+            MC_StopMotor1();
+            s_state = CIA402_READY_TO_SWITCH_ON;
+        }
+        else if ((cw & 0x000F) == 0x0007) /* Disable Operation (Transition 5) */
+        {
+            printf("[CIA402] Disable Operation from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
             s_state = CIA402_SWITCHED_ON;
         }
@@ -343,13 +385,38 @@ static void CIA402_StateMachineProcess(void)
             }
         }
         break;
-    case CIA402_FAULT:
-        if (cw & 0x0080)
+
+    case CIA402_QUICK_STOP_ACTIVE:
+        if ((cw & 0x0002) == 0) /* Disable Voltage (Transition 12) */
         {
-            MC_AcknowledgeFaultMotor1();
+            MC_StopMotor1();
             s_state = CIA402_SWITCH_ON_DISABLED;
         }
+        else if ((cw & 0x000F) == 0x000F) /* Enable Operation (Transition 16) */
+        {
+            printf("[CIA402] Enable Operation from QUICK_STOP_ACTIVE\r\n");
+            s_state = CIA402_OPERATION_ENABLED;
+        }
         break;
+
+    case CIA402_FAULT_REACTION_ACTIVE:
+        if (HAL_GetTick() - s_fault_reaction_tick > 100) /* Fault Reaction completed (Transition 14) */
+        {
+            s_state = CIA402_FAULT;
+        }
+        break;
+
+    case CIA402_FAULT:
+        if ((cw & 0x0080) && !(s_cw_prev & 0x0080)) /* Fault Reset (Transition 15) */
+        {
+            MC_AcknowledgeFaultMotor1();
+            if (MC_GetCurrentFaultsMotor1() == 0)
+            {
+                s_state = CIA402_SWITCH_ON_DISABLED;
+            }
+        }
+        break;
+
     default:
         break;
     }
