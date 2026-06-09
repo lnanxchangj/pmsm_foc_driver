@@ -184,38 +184,66 @@ static void CIA402_HomingStart(void)
     if (s_homing_method == 0)
         s_homing_method = 35;  /* 默认方法 35: 仅 Z 脉冲 */
 
-    /* 仅支持基于 Z 脉冲的方法 */
-    if (s_homing_method != 35 && s_homing_method != 37)
+    /* 支持所有基于 Z 脉冲的方法 (33~37) */
+    if (s_homing_method < 33 || s_homing_method > 37)
     {
         s_homing_state = CIA402_HM_ERROR;
         printf("[CIA402] Homing ERROR: unsupported method %d\r\n", (int)s_homing_method);
         return;
     }
 
-    /* 禁用位置环，回零由 TC_EncAlignmentCommand 的 ramp 控制 */
+    /* 禁用位置环，回零由对齐 ramp 控制 */
     if (pPosCtrl[0])
         pPosCtrl[0]->PositionControlRegulation = DISABLE;
 
-    /* 重置对齐状态，触发 Z 脉冲搜索 ramp */
+    /* 停掉可能正在运行的 ramp */
+    if (pSTC[0])
+        STC_StopRamp(pSTC[0]);
+
+    /* 读取回零速度和加速度，计算对齐运动参数 */
+    float_t hm_speed_rpm = (float_t)OD_RAM.x6099_homingSpeeds[1];  /* sub2: 搜索零位速度 */
+    if (hm_speed_rpm < 1.0f)
+        hm_speed_rpm = 60.0f;  /* 默认 60 RPM */
+    float_t hm_speed_rads = (hm_speed_rpm * CIA402_2PI) / 60.0f;
+
+    /* 搜索圈数: 保证能在 1 圈内找到 Z 脉冲 */
+    float_t num_rev = 3.0f;
+    float_t angle_step = num_rev * CIA402_2PI;
+    float_t duration = angle_step / hm_speed_rads;
+    /* 限制最小/最大时长 */
+    if (duration < 0.1f)  duration = 0.1f;
+    if (duration > 30.0f) duration = 30.0f;
+
+    /* 直接用 TC_MoveCommand 替代 TC_EncAlignmentCommand，
+     * 使用用户设置的回零速度而非硬编码的 30 RPM */
     if (pPosCtrl[0])
     {
-        /* 停掉可能正在运行的 ramp */
-        if (pSTC[0])
-            STC_StopRamp(pSTC[0]);
+        int32_t wMecAngleRef = SPD_GetMecAngle(STC_GetSpeedSensor(pPosCtrl[0]->pSTC));
+        float_t start_rad = (float_t)wMecAngleRef / RADTOS16;
 
+        pPosCtrl[0]->EncoderAbsoluteAligned = false;
         pPosCtrl[0]->AlignmentStatus = TC_AWAITING_FOR_ALIGNMENT;
-        TC_EncAlignmentCommand(pPosCtrl[0]);
+        PID_SetIntegralTerm(pPosCtrl[0]->PIDPosRegulator, 0);
+
+        if (TC_MoveCommand(pPosCtrl[0], start_rad, angle_step, duration))
+        {
+            pPosCtrl[0]->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
+        }
+        else
+        {
+            s_homing_state = CIA402_HM_ERROR;
+            printf("[CIA402] Homing ERROR: TC_MoveCommand failed\r\n");
+            return;
+        }
     }
 
     s_homing_state = CIA402_HM_SEARCHING;
     s_homing_start_tick = HAL_GetTick();
     s_homing_halted = false;
 
-    printf("[CIA402] Homing STARTED: method=%d, speeds=[%lu,%lu], acc=%lu\r\n",
-           (int)s_homing_method,
-           (unsigned long)OD_RAM.x6099_homingSpeeds[0],
-           (unsigned long)OD_RAM.x6099_homingSpeeds[1],
-           (unsigned long)OD_RAM.x609A_homingAcceleration);
+    printf("[CIA402] Homing STARTED: method=%d, speed=%.0f RPM, revs=%.1f, dur=%.2fs\r\n",
+           (int)s_homing_method, (double)hm_speed_rpm,
+           (double)num_rev, (double)duration);
 }
 
 /* ============================================================
@@ -522,8 +550,13 @@ static void CIA402_StateMachineProcess(void)
                 bool bit4_now  = (cw & CW_NEW_SETPOINT) != 0u;  /* HM 模式中 bit4 = 开始回零 */
                 bool bit4_prev = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
 
-                /* bit4 上升沿 → 启动回零 (仅在 IDLE 或 ERROR 状态可启动) */
-                if (bit4_now && !bit4_prev)
+                /* bit4 上升沿或电平 → 启动回零 (边沿丢失时电平兜底) */
+                bool hm_edge = (bit4_now && !bit4_prev);
+                bool hm_level = (bit4_now && (s_homing_state == CIA402_HM_IDLE ||
+                                              s_homing_state == CIA402_HM_ERROR ||
+                                              s_homing_state == CIA402_HM_HALTED));
+
+                if (hm_edge || hm_level)
                 {
                     if (s_homing_state == CIA402_HM_IDLE ||
                         s_homing_state == CIA402_HM_ERROR ||
