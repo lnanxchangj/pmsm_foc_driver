@@ -312,13 +312,6 @@ __weak void TSK_MediumFrequencyTaskM1(void)
                 FOC_CalcCurrRef(M1);
                 STC_ForceSpeedReferenceToCurrentSpeed(pSTC[M1]); /* Init the reference speed to current speed */
                 MCI_ExecBufferedCommands(&Mci[M1]); /* Exec the speed ramp after changing of the speed sensor */
-                /* 【修复】EAC已对齐时此路径直接到RUN，绕过了WAIT_STOP_MOTOR中
-                 * 的TC_EncAlignmentCommand调用。必须在此处补充编码器Z-index寻零对齐。
-                 * 放在MCI_ExecBufferedCommands之后：先执行可能残留的缓冲命令，
-                 * 再启动对齐ramp（TC_PositionRegulation会切换到TORQUE_MODE覆盖）。
-                 * 安全：AlignmentStatus==COMPLETED时是空操作（仅设置状态），
-                 * 只有CIA402位置模式重置了AlignmentStatus时才真正执行Z搜索。 */
-                TC_EncAlignmentCommand(pPosCtrl[M1]);
                 Mci[M1].State = RUN;
               }
               PWMC_SwitchOnPWM(pwmcHandle[M1]);
