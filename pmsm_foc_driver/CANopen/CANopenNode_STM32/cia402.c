@@ -569,6 +569,7 @@ static void CIA402_StateMachineProcess(void)
                 {
                     int32_t current_inc = (int32_t)OD_RAM.x6064_positionActualValue;
                     int32_t target_inc;
+                    int32_t raw_target = OD_RAM.x607A_targetPosition;
 
                     if (cw & CW_ABS_REL)
                         target_inc = (current_inc + raw_target) % MODULO_RANGE;
