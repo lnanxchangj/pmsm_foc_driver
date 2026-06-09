@@ -312,9 +312,13 @@ __weak void TSK_MediumFrequencyTaskM1(void)
                 FOC_CalcCurrRef(M1);
                 STC_ForceSpeedReferenceToCurrentSpeed(pSTC[M1]); /* Init the reference speed to current speed */
                 MCI_ExecBufferedCommands(&Mci[M1]); /* Exec the speed ramp after changing of the speed sensor */
-                /* Z-index 对齐已移至 CIA402 回零模式 (Mode 6)，启动时不再自动寻零。
-                 * TC_PositionRegulation 在 RUN 状态每周期运行，
-                 * 仅当 CIA402 显式触发 TC_EncAlignmentCommand 时才搜索 Z 脉冲。 */
+                /* 【修复】EAC已对齐时此路径直接到RUN，绕过了WAIT_STOP_MOTOR中
+                 * 的TC_EncAlignmentCommand调用。必须在此处补充编码器Z-index寻零对齐。
+                 * 放在MCI_ExecBufferedCommands之后：先执行可能残留的缓冲命令，
+                 * 再启动对齐ramp（TC_PositionRegulation会切换到TORQUE_MODE覆盖）。
+                 * 安全：AlignmentStatus==COMPLETED时是空操作（仅设置状态），
+                 * 只有CIA402位置模式重置了AlignmentStatus时才真正执行Z搜索。 */
+                TC_EncAlignmentCommand(pPosCtrl[M1]);
                 Mci[M1].State = RUN;
               }
               PWMC_SwitchOnPWM(pwmcHandle[M1]);
@@ -432,7 +436,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
             {
               ENC_Clear(&ENCODER_M1);
               R3_2_SwitchOnPWM(pwmcHandle[M1]);
-              /* Z-index 对齐已移至 CIA402 回零模式 (Mode 6)，启动时不再自动寻零 */
+              TC_EncAlignmentCommand(pPosCtrl[M1]);
               FOC_InitAdditionalMethods(M1);
               STC_ForceSpeedReferenceToCurrentSpeed(pSTC[M1]); /* Init the reference speed to current speed */
               MCI_ExecBufferedCommands(&Mci[M1]); /* Exec the speed ramp after changing of the speed sensor */

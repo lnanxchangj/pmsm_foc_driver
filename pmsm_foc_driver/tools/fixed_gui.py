@@ -333,6 +333,41 @@ class CanMasterWindow(QMainWindow):
         manual_group.setLayout(manual_layout)
         main_layout.addWidget(manual_group)
 
+        # ──── 6.5. 快捷 RAW 回零指令 ────
+        raw_hm_group = QGroupBox("6.5. 快捷 RAW 回零指令")
+        raw_hm_layout = QGridLayout()
+
+        btn_raw_speed = QPushButton("回零速度")
+        btn_raw_speed.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x23, 0x99, 0x60, 0x02, 0x00, 0x00, 0x01, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_speed, 0, 0)
+
+        btn_raw_acc = QPushButton("回零加速度")
+        btn_raw_acc.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x23, 0x9A, 0x60, 0x00, 0x20, 0x00, 0x00, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_acc, 0, 1)
+
+        btn_raw_offset = QPushButton("原点偏置")
+        btn_raw_offset.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x23, 0x7C, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_offset, 0, 2)
+
+        btn_raw_way = QPushButton("回零方式 (33)")
+        btn_raw_way.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x2F, 0x98, 0x60, 0x00, 0x21, 0x00, 0x00, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_way, 0, 3)
+
+        btn_raw_mode = QPushButton("回零模式")
+        btn_raw_mode.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x2F, 0x60, 0x60, 0x00, 0x06, 0x00, 0x00, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_mode, 1, 0)
+
+        btn_raw_start = QPushButton("开始回零 (RPDO 0x201)")
+        btn_raw_start.clicked.connect(lambda: self.send_frame(0x200 + self.node_id, [0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_start, 1, 1)
+
+        btn_raw_check = QPushButton("检查位置")
+        btn_raw_check.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x40, 0x64, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        raw_hm_layout.addWidget(btn_raw_check, 1, 2)
+
+        raw_hm_group.setLayout(raw_hm_layout)
+        main_layout.addWidget(raw_hm_group)
+
         # ──── 7. 日志 / 接收区 ────
         log_group = QGroupBox("7. 日志 & CAN 接收")
         log_layout = QVBoxLayout()
