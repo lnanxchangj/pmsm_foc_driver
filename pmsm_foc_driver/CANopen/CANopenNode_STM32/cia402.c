@@ -23,7 +23,7 @@ static bool s_pp_setpoint_pending = false;
 static int32_t s_target_pos_inc = 0;
 static int32_t s_last_target_vel = 0;
 static int8_t s_last_mode = 0;
-static bool s_pp_just_entered = false;  /* 进入OP_ENABLED时bit4已置位 → 补发一次触发 */
+/* s_pp_setpoint_pending 已存在: bit4=1 时置位, bit4=0 时清零 → 防止重复触发 */
 static uint32_t s_fault_reaction_tick = 0;
 
 /* 连续多圈位置跟踪变量 */
@@ -391,14 +391,6 @@ static void CIA402_StateMachineProcess(void)
                     }
                     if (pPosCtrl[0])
                         pPosCtrl[0]->PositionControlRegulation = ENABLE;
-
-                    /* 兼容单帧触发: 如果在电机就绪前主机已发了 bit4=1，
-                     * 标准边沿检测会丢失上升沿。设标志让下一周期补触发。 */
-                    if (cw & CW_NEW_SETPOINT)
-                    {
-                        s_pp_just_entered = true;
-                        s_pp_setpoint_pending = false;
-                    }
                 }
                 else if (mode == 3) /* PV: 速度模式 —— 直接切换，不改编码器值 */
                 {
@@ -561,11 +553,12 @@ static void CIA402_StateMachineProcess(void)
                 bool last_setpoint = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
 
                 /* 触发条件：
-                 * ① 标准 CiA 402: bit4 0→1 上升沿
-                 * ② 兼容单帧触发: 进入 OP_ENABLED 时 bit4 已置位（边沿丢失） */
+                 * ① 标准: bit4 0→1 上升沿
+                 * ② 兼容: bit4=1 且未在等待应答 (主机先清零再置位但边沿被跨周期吞掉) */
                 bool edge_trigger  = (new_setpoint && !last_setpoint);
+                bool level_trigger = (new_setpoint && !s_pp_setpoint_pending);
 
-                if (edge_trigger || s_pp_just_entered)
+                if (edge_trigger || level_trigger)
                 {
                     int32_t current_inc = (int32_t)OD_RAM.x6064_positionActualValue;
                     int32_t target_inc;
@@ -604,7 +597,6 @@ static void CIA402_StateMachineProcess(void)
                     s_target_pos_inc = target_inc;
                     s_target_reached_timer = 0;
                     s_pp_setpoint_pending = true;
-                    s_pp_just_entered = false;  /* 一次性触发已消耗 */
 
                     MC_ProgramPositionCommandMotor1(final_target_rad, dur);
                     printf("[CIA402] PP %s: To %d, Dur=%.3fs\r\n",
