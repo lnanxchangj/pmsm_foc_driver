@@ -62,7 +62,7 @@ class CanMasterWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.bus = None
-        self.node_id = 16          # 默认 Node ID (与固件一致)
+        self.node_id = 1           # 默认 Node ID (与固件一致 NodeID=1)
         self.can_receiver = CanReceiver(lambda: self.bus)
         self.can_receiver.msg_received.connect(self.on_can_received)
         self.init_ui()
@@ -229,6 +229,39 @@ class CanMasterWindow(QMainWindow):
 
         move_group.setLayout(move_layout)
         main_layout.addWidget(move_group)
+
+        # ──── 4.5. 回零操作 ────
+        hm_op_group = QGroupBox("4.5. 回零操作 (Homing)")
+        hm_op_layout = QGridLayout()
+
+        hm_op_layout.addWidget(QLabel("回零速度 (RPM):"), 0, 0)
+        self.hm_op_speed = QSpinBox(); self.hm_op_speed.setRange(1, 500); self.hm_op_speed.setValue(60)
+        hm_op_layout.addWidget(self.hm_op_speed, 0, 1)
+
+        hm_op_layout.addWidget(QLabel("方法 (33-37):"), 0, 2)
+        self.hm_op_method = QSpinBox(); self.hm_op_method.setRange(33, 37); self.hm_op_method.setValue(35)
+        hm_op_layout.addWidget(self.hm_op_method, 0, 3)
+
+        self.btn_hm_full = QPushButton("▶ 一键回零 (Enable + HM + Start)")
+        self.btn_hm_full.clicked.connect(self.homing_sequence)
+        self.btn_hm_full.setStyleSheet("background-color: #FFD700; font-weight: bold; height: 30px;")
+        hm_op_layout.addWidget(self.btn_hm_full, 1, 0, 1, 4)
+
+        self.btn_hm_start_only = QPushButton("仅启动回零 (bit4=1)")
+        self.btn_hm_start_only.clicked.connect(self.homing_start_only)
+        self.btn_hm_start_only.setStyleSheet("background-color: #FFA500; font-weight: bold;")
+        hm_op_layout.addWidget(self.btn_hm_start_only, 2, 0, 1, 2)
+
+        self.btn_hm_read_pos = QPushButton("读取位置 (0x6064)")
+        self.btn_hm_read_pos.clicked.connect(lambda: self.send_sdo_read(0x6064, 0))
+        hm_op_layout.addWidget(self.btn_hm_read_pos, 2, 2, 1, 2)
+
+        self.lbl_hm_status = QLabel("状态: ---")
+        self.lbl_hm_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #333;")
+        hm_op_layout.addWidget(self.lbl_hm_status, 3, 0, 1, 4)
+
+        hm_op_group.setLayout(hm_op_layout)
+        main_layout.addWidget(hm_op_group)
 
         # ──── 5. SDO 快速读写 ────
         sdo_group = QGroupBox("5. SDO 快速读写")
@@ -434,6 +467,109 @@ class CanMasterWindow(QMainWindow):
         off = self.home_offset.value()
         self.send_sdo_write(0x607C, 0, off, 4)
         self.log(f"设置原点偏置 0x607C ← {off}")
+
+    # ── 回零操作 ────────────────────────────────────────────────
+    def homing_start_only(self):
+        """发送 CW bit4 上升沿启动回零（电机需已在 HM 模式且已使能）"""
+        self.send_controlword(0x0F)         # bit4=0, 清零
+        time.sleep(0.03)
+        self.send_controlword(0x1F)         # bit4=1, 上升沿触发
+        self.lbl_hm_status.setText("状态: 回零启动中...")
+        self.log("发送回零启动触发 (bit4 0→1)")
+
+    def homing_sequence(self):
+        """完整回零流程: 设参数 → HM模式 → 使能 → 触发回零"""
+        speed = self.hm_op_speed.value()
+        method = self.hm_op_method.value()
+
+        self.lbl_hm_status.setText("状态: 序列启动...")
+        self.log("========== 开始回零流程 ==========")
+
+        # 1. NMT Start
+        self.send_nmt(0x01)
+        time.sleep(0.05)
+
+        # 2. 设置回零参数
+        self.send_sdo_write(0x6098, 0, method, 1)       # 回零方式
+        self.log(f"  回零方式: {method}")
+        self.send_sdo_write(0x6099, 2, speed, 4)         # 回零速度 sub2
+        self.log(f"  回零速度: {speed} RPM")
+        self.send_sdo_write(0x609A, 0, 100, 4)           # 回零加速度
+        self.send_sdo_write(0x607C, 0, 0, 4)             # 原点偏置=0
+        time.sleep(0.05)
+
+        # 3. 设为回零模式
+        self.send_sdo_write(0x6060, 0, 6, 1)
+        self.log("  模式设为 HM (6)")
+        time.sleep(0.05)
+
+        # 4. 使能电机: Shutdown → Switch On → Enable
+        self.send_controlword(0x06)   # Shutdown
+        time.sleep(0.05)
+        self.send_controlword(0x07)   # Switch On
+        time.sleep(0.05)
+        self.send_controlword(0x0F)   # Enable Operation
+        self.log("  电机使能中 (等待启动)...")
+        time.sleep(0.5)  # 等待电机完成启动（校准+对齐）
+
+        # 5. 启动回零: bit4 0→1 上升沿
+        self.send_controlword(0x0F)   # bit4=0
+        time.sleep(0.03)
+        self.send_controlword(0x1F)   # bit4=1 → 触发回零
+        self.lbl_hm_status.setText("状态: 回零搜索中...")
+        self.log("  回零启动触发 (CW bit4 0→1)")
+
+        # 6. 轮询等待回零完成
+        self._hm_poll_count = 0
+        self._hm_poll_timer = QTimer()
+        self._hm_poll_timer.timeout.connect(self._poll_homing_status)
+        self._hm_poll_timer.start(200)  # 每 200ms 查一次
+
+    def _poll_homing_status(self):
+        """轮询状态字 bit12(回零完成) 和 bit10(目标到达)"""
+        self._hm_poll_count += 1
+        if self._hm_poll_count > 100:  # 20 秒超时
+            self._hm_poll_timer.stop()
+            self.lbl_hm_status.setText("状态: 超时!")
+            self.log("<span style='color:red;'>回零超时 (>20s)</span>")
+            return
+
+        # 读状态字 0x6041
+        self.send_sdo_read(0x6041, 0)
+        time.sleep(0.05)
+
+        # 尝试收响应
+        try:
+            if self.bus:
+                msg = self.bus.recv(timeout=0.05)
+                if msg and msg.arbitration_id == 0x580 + self.node_id:
+                    data = msg.data
+                    if data[0] == 0x4B:  # SDO upload response, 2 bytes
+                        sw = data[4] | (data[5] << 8)
+                    elif data[0] == 0x43:  # SDO upload response, 4 bytes
+                        sw = data[4] | (data[5] << 8)
+                    else:
+                        return
+
+                    bit12 = (sw >> 12) & 1  # homing attained
+                    bit10 = (sw >> 10) & 1  # target reached
+                    bit13 = (sw >> 13) & 1  # homing error
+
+                    if bit13:
+                        self._hm_poll_timer.stop()
+                        self.lbl_hm_status.setText("状态: 回零错误!")
+                        self.log(f"<span style='color:red;'>回零错误! SW=0x{sw:04X}</span>")
+                    elif bit12 and bit10:
+                        self._hm_poll_timer.stop()
+                        self.lbl_hm_status.setText("状态: 回零完成 ✓")
+                        self.log(f"<span style='color:green;'>回零成功完成! SW=0x{sw:04X}</span>")
+                        # 读回实际位置
+                        self.send_sdo_read(0x6064, 0)
+                    else:
+                        elapsed = self._hm_poll_count * 0.2
+                        self.lbl_hm_status.setText(f"状态: 搜索中... ({elapsed:.1f}s)")
+        except Exception:
+            pass
 
     # ── 运动指令 ────────────────────────────────────────────────
     def move_to(self):
