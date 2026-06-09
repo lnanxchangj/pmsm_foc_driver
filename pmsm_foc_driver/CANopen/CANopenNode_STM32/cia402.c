@@ -322,14 +322,23 @@ static void CIA402_StateMachineProcess(void)
                 if (target_vel != s_last_target_vel)
                 {
                     float_t target_rpm = (float_t)target_vel / CIA402_VEL_SCALE;
-                    /* 修复：使用 0x6083 (profileAcceleration) 作为斜坡时间(ms) 避免突变失速 */
-                    uint16_t ramp_ms = (uint16_t)OD_RAM.x6083_profileAcceleration;
+                    
+                    /* 适配 0x6083 为加速度单元 (默认 RPM/s) */
+                    float_t acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
+                    if (acc_val < 1.0f)
+                        acc_val = 1000.0f; // 默认 1000 RPM/s，防止除零
+
+                    float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
+                    float_t diff_rpm = fabsf(target_rpm - current_rpm);
+                    
+                    /* 动态计算斜坡时间 (ms): ramp_ms = (|dv| / a) * 1000 */
+                    uint16_t ramp_ms = (uint16_t)((diff_rpm / acc_val) * 1000.0f);
                     if (ramp_ms < 10)
-                        ramp_ms = 500; // 默认给500ms保护
+                        ramp_ms = 10; // 最小允许10ms斜坡时间
 
                     MC_ProgramSpeedRampMotor1_F(target_rpm, ramp_ms);
                     s_last_target_vel = target_vel;
-                    printf("[CIA402] PV Target: %d RPM, Ramp: %d ms\r\n", (int)target_vel, ramp_ms);
+                    printf("[CIA402] PV Target: %d RPM, Acc: %d, Ramp: %d ms\r\n", (int)target_vel, (int)OD_RAM.x6083_profileAcceleration, ramp_ms);
                 }
             }
         }
