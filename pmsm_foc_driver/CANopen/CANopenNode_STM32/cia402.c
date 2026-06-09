@@ -23,6 +23,7 @@ static bool s_pp_setpoint_pending = false;
 static int32_t s_target_pos_inc = 0;
 static int32_t s_last_target_vel = 0;
 static int8_t s_last_mode = 0;
+static int32_t s_last_pp_target = 0;   /* 上一个已执行的目标位置，用于兼容单帧触发 */
 static uint32_t s_fault_reaction_tick = 0;
 
 /* 连续多圈位置跟踪变量 */
@@ -551,15 +552,22 @@ static void CIA402_StateMachineProcess(void)
                 bool new_setpoint = (cw & CW_NEW_SETPOINT) != 0u;
                 bool last_setpoint = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
 
-                if (new_setpoint && !last_setpoint)
+                /* 触发条件：
+                 * ① 标准 CiA 402: bit4 0→1 上升沿
+                 * ② 兼容单帧触发: bit4=1 且目标位置改变 (主机在电机就绪前已发) */
+                bool edge_trigger  = (new_setpoint && !last_setpoint);
+                int32_t raw_target = OD_RAM.x607A_targetPosition;
+                bool target_changed = (new_setpoint && (raw_target != s_last_pp_target));
+
+                if (edge_trigger || target_changed)
                 {
                     int32_t current_inc = (int32_t)OD_RAM.x6064_positionActualValue;
                     int32_t target_inc;
 
                     if (cw & CW_ABS_REL)
-                        target_inc = (current_inc + OD_RAM.x607A_targetPosition) % MODULO_RANGE;
+                        target_inc = (current_inc + raw_target) % MODULO_RANGE;
                     else
-                        target_inc = OD_RAM.x607A_targetPosition % MODULO_RANGE;
+                        target_inc = raw_target % MODULO_RANGE;
 
                     if (target_inc < 0)
                         target_inc += MODULO_RANGE;
@@ -589,10 +597,13 @@ static void CIA402_StateMachineProcess(void)
                     s_target_pos_inc = target_inc;
                     s_target_reached_timer = 0;
                     s_pp_setpoint_pending = true;
+                    s_last_pp_target = raw_target;  /* 记录已执行的目标 */
 
                     MC_ProgramPositionCommandMotor1(final_target_rad, dur);
-                    printf("[CIA402] PP %s: To %d, Dur=%.3fs\r\n",
-                           (cw & CW_ABS_REL) ? "REL" : "ABS", (int)target_inc, dur);
+                    printf("[CIA402] PP %s: To %d, Dur=%.3fs (%s)\r\n",
+                           (cw & CW_ABS_REL) ? "REL" : "ABS",
+                           (int)target_inc, dur,
+                           edge_trigger ? "edge" : "level");
                 }
 
                 if (!new_setpoint)
