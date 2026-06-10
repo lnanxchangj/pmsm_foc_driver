@@ -192,60 +192,36 @@ static void CIA402_HomingStart(void)
         return;
     }
 
-    /* 禁用位置环，回零由对齐 ramp 控制 */
-    if (pPosCtrl[0])
-        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+    /* 强制硬编码回零速度为 10 RPM */
+    float_t hm_speed_rpm = 10.0f;
 
-    /* 停掉可能正在运行的 ramp */
-    if (pSTC[0])
-        STC_StopRamp(pSTC[0]);
-
-    /* 读取回零速度和加速度，计算对齐运动参数 */
-    float_t hm_speed_rpm = (float_t)OD_RAM.x6099_homingSpeeds[1];  /* sub2: 搜索零位速度 */
-    if (hm_speed_rpm < 1.0f)
-        hm_speed_rpm = 60.0f;  /* 默认 60 RPM */
-    if (hm_speed_rpm > 500.0f)
-        hm_speed_rpm = 500.0f; /* 最大 500 RPM，防止字节序错误导致暴冲 */
-    float_t hm_speed_rads = (hm_speed_rpm * CIA402_2PI) / 60.0f;
-
-    /* 搜索圈数: 保证能在 1 圈内找到 Z 脉冲 */
-    float_t num_rev = 3.0f;
-    float_t angle_step = num_rev * CIA402_2PI;
-    float_t duration = angle_step / hm_speed_rads;
-    /* 限制最小/最大时长 */
-    if (duration < 0.1f)  duration = 0.1f;
-    if (duration > 30.0f) duration = 30.0f;
-
-    /* 直接用 TC_MoveCommand 替代 TC_EncAlignmentCommand，
-     * 使用用户设置的回零速度而非硬编码的 30 RPM */
+    /* 启动回零前，重置对齐状态 */
     if (pPosCtrl[0])
     {
+        /* 读取当前角度，准备进行多圈位置轨迹移动以寻找Z脉冲 */
         int32_t wMecAngleRef = SPD_GetMecAngle(STC_GetSpeedSensor(pPosCtrl[0]->pSTC));
-        float_t start_rad = (float_t)wMecAngleRef / RADTOS16;
-
+        
+        /* 计算回零速度对应的 duration (ST默认是1圈2秒 = 30RPM) */
+        float_t target_rpm = hm_speed_rpm;
+        if (target_rpm < 1.0f) target_rpm = 10.0f;
+        
+        /* 计算移动一圈(2PI)需要的时间 */
+        float_t duration = 60.0f / target_rpm; 
+        
+        /* 发起一个 2PI (1圈) 的位置控制移动 */
+        TC_MoveCommand(pPosCtrl[0], (float)(wMecAngleRef) / 10430.378f, 6.283185f, duration);
+        
         pPosCtrl[0]->EncoderAbsoluteAligned = false;
-        pPosCtrl[0]->AlignmentStatus = TC_AWAITING_FOR_ALIGNMENT;
-        PID_SetIntegralTerm(pPosCtrl[0]->PIDPosRegulator, 0);
-
-        if (TC_MoveCommand(pPosCtrl[0], start_rad, angle_step, duration))
-        {
-            pPosCtrl[0]->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
-        }
-        else
-        {
-            s_homing_state = CIA402_HM_ERROR;
-            printf("[CIA402] Homing ERROR: TC_MoveCommand failed\r\n");
-            return;
-        }
+        pPosCtrl[0]->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
+        pPosCtrl[0]->PositionControlRegulation = ENABLE;
     }
 
     s_homing_state = CIA402_HM_SEARCHING;
     s_homing_start_tick = HAL_GetTick();
     s_homing_halted = false;
 
-    printf("[CIA402] Homing STARTED: method=%d, speed=%.0f RPM, revs=%.1f, dur=%.2fs\r\n",
-           (int)s_homing_method, (double)hm_speed_rpm,
-           (double)num_rev, (double)duration);
+    printf("[CIA402] Homing STARTED (Position Mode): method=%d, speed=%.0f RPM\r\n",
+           (int)s_homing_method, (double)hm_speed_rpm);
 }
 
 /* ============================================================
@@ -253,8 +229,8 @@ static void CIA402_HomingStart(void)
  * ============================================================ */
 static void CIA402_HomingStop(void)
 {
-    if (pSTC[0])
-        STC_StopRamp(pSTC[0]);
+    /* 立即在速度模式下停止电机 */
+    MC_ProgramSpeedRampMotor1_F(0.0f, 100);
     s_homing_halted = true;
     s_homing_state = CIA402_HM_HALTED;
     printf("[CIA402] Homing HALTED\r\n");
@@ -333,8 +309,16 @@ static void CIA402_HomingProcess(void)
         OD_RAM.x6064_positionActualValue = s_target_pos_inc;
         OD_RAM.x607A_targetPosition = s_target_pos_inc;
 
+        /* 找到零点后必须立即停止电机，避免持续高速运转导致失步或故障 */
+        float_t acc_val = (float_t)OD_RAM.x609A_homingAcceleration * CIA402_ACC_SCALE;
+        if (acc_val < 1.0f) acc_val = 1000.0f;
+        float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
+        uint16_t stop_ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
+        if (stop_ramp_ms < 10) stop_ramp_ms = 10;
+        MC_ProgramSpeedRampMotor1_F(0.0f, stop_ramp_ms);
+
         s_homing_state = CIA402_HM_COMPLETED;
-        printf("[CIA402] Homing COMPLETED: pos=%ld, offset=%ld\r\n",
+        printf("[CIA402] Homing COMPLETED: pos=%ld, offset=%ld. Stopping motor...\r\n",
                (long)s_target_pos_inc, (long)home_offset);
     }
     else if (align == TC_ALIGNMENT_ERROR)
