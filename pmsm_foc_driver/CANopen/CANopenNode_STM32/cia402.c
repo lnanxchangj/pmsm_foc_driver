@@ -196,7 +196,7 @@ static void CIA402_HomingStart(void)
     if (s_homing_method < 33 || s_homing_method > 37)
     {
         s_homing_state = CIA402_HM_ERROR;
-        printf("[CIA402] Homing ERROR: unsupported method %d\r\n", (int)s_homing_method);
+        // printf("[CIA402] Homing ERROR: unsupported method %d\r\n", (int)s_homing_method);
         return;
     }
 
@@ -229,8 +229,7 @@ static void CIA402_HomingStart(void)
     s_homing_start_tick = HAL_GetTick();
     s_homing_halted = false;
 
-    printf("[CIA402] Homing STARTED (Position Mode): method=%d, speed=%.0f RPM\r\n",
-           (int)s_homing_method, (double)hm_speed_rpm);
+    // printf("[CIA402] Homing STARTED (Position Mode): method=%d, speed=%.0f RPM\r\n", (int)s_homing_method, (double)hm_speed_rpm);
 }
 
 /* ============================================================
@@ -242,7 +241,7 @@ static void CIA402_HomingStop(void)
     MC_ProgramSpeedRampMotor1_F(0.0f, 100);
     s_homing_halted = true;
     s_homing_state = CIA402_HM_HALTED;
-    printf("[CIA402] Homing HALTED\r\n");
+    // printf("[CIA402] Homing HALTED\r\n");
 }
 
 /* ============================================================
@@ -271,7 +270,7 @@ static void CIA402_HomingProcess(void)
         s_homing_state = CIA402_HM_SEARCHING;
         s_homing_start_tick = HAL_GetTick();
         s_homing_halted = false;
-        printf("[CIA402] Homing RESUMED\r\n");
+        // printf("[CIA402] Homing RESUMED\r\n");
         return;
     }
 
@@ -284,7 +283,7 @@ static void CIA402_HomingProcess(void)
         s_homing_state = CIA402_HM_ERROR;
         if (pSTC[0])
             STC_StopRamp(pSTC[0]);
-        printf("[CIA402] Homing ERROR: timeout (>%d ms)\r\n", HOMING_TIMEOUT_MS);
+        // printf("[CIA402] Homing ERROR: timeout (>%d ms)\r\n", HOMING_TIMEOUT_MS);
         return;
     }
 
@@ -329,13 +328,12 @@ static void CIA402_HomingProcess(void)
         MC_ProgramSpeedRampMotor1_F(0.0f, stop_ramp_ms);
 
         s_homing_state = CIA402_HM_COMPLETED;
-        printf("[CIA402] Homing COMPLETED: pos=%ld, offset=%ld. Stopping motor...\r\n",
-               (long)s_target_pos_inc, (long)home_offset);
+        // printf("[CIA402] Homing COMPLETED: pos=%ld, offset=%ld. Stopping motor...\r\n", (long)s_target_pos_inc, (long)home_offset);
     }
     else if (align == TC_ALIGNMENT_ERROR)
     {
         s_homing_state = CIA402_HM_ERROR;
-        printf("[CIA402] Homing ERROR: Z-index not found (no Z signal or ramp failed)\r\n");
+        // printf("[CIA402] Homing ERROR: Z-index not found (no Z signal or ramp failed)\r\n");
     }
     /* TC_ZERO_ALIGNMENT_START: 搜索 ramp 运行中，继续等待 */
     /* TC_AWAITING_FOR_ALIGNMENT: 刚重置，等待 TC_PositionRegulation 启动 ramp */
@@ -387,8 +385,9 @@ static void CIA402_StateMachineProcess(void)
         {
             if (mc_state == IDLE)
             {
-                if (MC_StartMotor1())
-                    printf("[CIA402] Motor starting...\r\n");
+                if (MC_StartMotor1()) {
+                    // printf("[CIA402] Motor starting...\r\n");
+                }
             }
             else if (mc_state == RUN)
             {
@@ -451,7 +450,7 @@ static void CIA402_StateMachineProcess(void)
                     }
                     s_homing_state = CIA402_HM_IDLE;
                     s_homing_halted = false;
-                    printf("[CIA402] ENABLED: Homing Mode (Position Locked) - waiting for start (bit4)\r\n");
+                    // printf("[CIA402] ENABLED: Homing Mode (Position Locked) - waiting for start (bit4)\r\n");
                 }
 
                 s_last_target_vel = 0;
@@ -463,7 +462,7 @@ static void CIA402_StateMachineProcess(void)
                 OD_RAM.x607A_targetPosition = OD_RAM.x6064_positionActualValue;
 
                 s_state = CIA402_OPERATION_ENABLED;
-                printf("[CIA402] ENABLED: Mode %d Ready\r\n", mode);
+                // printf("[CIA402] ENABLED: Mode %d Ready\r\n", mode);
             }
         }
         break;
@@ -471,14 +470,14 @@ static void CIA402_StateMachineProcess(void)
     case CIA402_OPERATION_ENABLED:
         if ((cw & 0x0002) == 0) /* Disable Voltage (Transition 9) */
         {
-            printf("[CIA402] Disable Voltage from OPERATION_ENABLED\r\n");
+            // printf("[CIA402] Disable Voltage from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
             s_homing_state = CIA402_HM_IDLE;
             s_state = CIA402_SWITCH_ON_DISABLED;
         }
         else if ((cw & 0x0004) == 0) /* Quick Stop (Transition 11) */
         {
-            printf("[CIA402] Quick Stop from OPERATION_ENABLED\r\n");
+            // printf("[CIA402] Quick Stop from OPERATION_ENABLED\r\n");
             if (pPosCtrl[0] && mode == 1)
             {
                 float_t cur_pos = MC_GetCurrentPosition1();
@@ -504,14 +503,14 @@ static void CIA402_StateMachineProcess(void)
         }
         else if ((cw & 0x000F) == 0x0006) /* Shutdown (Transition 8) */
         {
-            printf("[CIA402] Shutdown from OPERATION_ENABLED\r\n");
+            // printf("[CIA402] Shutdown from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
             s_homing_state = CIA402_HM_IDLE;
             s_state = CIA402_READY_TO_SWITCH_ON;
         }
         else if ((cw & 0x000F) == 0x0007) /* Disable Operation (Transition 5) */
         {
-            printf("[CIA402] Disable Operation from OPERATION_ENABLED\r\n");
+            // printf("[CIA402] Disable Operation from OPERATION_ENABLED\r\n");
             MC_StopMotor1();
             s_homing_state = CIA402_HM_IDLE;
             s_state = CIA402_SWITCHED_ON;
@@ -541,7 +540,7 @@ static void CIA402_StateMachineProcess(void)
                         pPosCtrl[0]->PositionControlRegulation = ENABLE;
 
                     s_homing_state = CIA402_HM_IDLE;
-                    printf("[CIA402] Mode Switched to PP (1)\r\n");
+                    // printf("[CIA402] Mode Switched to PP (1)\r\n");
                 }
                 else if (mode == 3) /* PV: 速度模式 */
                 {
@@ -552,7 +551,7 @@ static void CIA402_StateMachineProcess(void)
                     MC_ProgramSpeedRampMotor1_F(0.0f, 0.0f);
 
                     s_homing_state = CIA402_HM_IDLE;
-                    printf("[CIA402] Mode Switched to PV (3) - Pos Loop Disabled\r\n");
+                    // printf("[CIA402] Mode Switched to PV (3) - Pos Loop Disabled\r\n");
                 }
                 else if (mode == 6) /* HM: 回零模式 —— 等待控制字 bit4 启动 */
                 {
@@ -560,7 +559,7 @@ static void CIA402_StateMachineProcess(void)
                         pPosCtrl[0]->PositionControlRegulation = DISABLE;
                     s_homing_state = CIA402_HM_IDLE;
                     s_homing_halted = false;
-                    printf("[CIA402] Mode Switched to HM (6) - waiting for start (bit4)\r\n");
+                    // printf("[CIA402] Mode Switched to HM (6) - waiting for start (bit4)\r\n");
                 }
                 s_last_mode = mode;
             }
@@ -653,9 +652,7 @@ static void CIA402_StateMachineProcess(void)
                     s_pp_setpoint_pending = true;
 
                     MC_ProgramPositionCommandMotor1(final_target_rad, dur);
-                    printf("[CIA402] PP %s: To %d, Dur=%.3fs\r\n",
-                           (cw & CW_ABS_REL) ? "REL" : "ABS",
-                           (int)target_inc, dur);
+                    // printf("[CIA402] PP %s: To %d, Dur=%.3fs\r\n", (cw & CW_ABS_REL) ? "REL" : "ABS", (int)target_inc, dur);
                 }
 
                 if (!new_setpoint)
@@ -683,8 +680,7 @@ static void CIA402_StateMachineProcess(void)
 
                     MC_ProgramSpeedRampMotor1_F(target_rpm, ramp_ms);
                     s_last_target_vel = target_vel;
-                    printf("[CIA402] PV Target: %d RPM, Acc: %d, Ramp: %d ms\r\n",
-                           (int)target_vel, (int)OD_RAM.x6083_profileAcceleration, ramp_ms);
+                    // printf("[CIA402] PV Target: %d RPM, Acc: %d, Ramp: %d ms\r\n", (int)target_vel, (int)OD_RAM.x6083_profileAcceleration, ramp_ms);
                 }
             }
         }
@@ -698,7 +694,7 @@ static void CIA402_StateMachineProcess(void)
         }
         else if ((cw & 0x000F) == 0x000F) /* Enable Operation (Transition 16) */
         {
-            printf("[CIA402] Enable Operation from QUICK_STOP_ACTIVE\r\n");
+            // printf("[CIA402] Enable Operation from QUICK_STOP_ACTIVE\r\n");
             s_state = CIA402_OPERATION_ENABLED;
         }
         break;
@@ -784,11 +780,8 @@ void CIA402_Process(void)
     if (HAL_GetTick() - last_log > 500)
     {
         last_log = HAL_GetTick();
-        int mcsdk_pos_status = (pMCI[0]->pPosCtrl) ? pMCI[0]->pPosCtrl->PositionCtrlStatus : -1;
-        int align_status = (pMCI[0]->pPosCtrl) ? pMCI[0]->pPosCtrl->AlignmentStatus : -1;
-        printf("[CIA402] State:%d SW:0x%04X Act:%d Tar:%d PS:%d AS:%d HM:%d\r\n",
-               (int)s_state, sw, (int)OD_RAM.x6064_positionActualValue, (int)s_target_pos_inc,
-               mcsdk_pos_status, align_status, (int)s_homing_state);
+        // int mcsdk_pos_status = (pMCI[0]->pPosCtrl) ? pMCI[0]->pPosCtrl->PositionCtrlStatus : -1;
+        // int align_status = (pMCI[0]->pPosCtrl) ? pMCI[0]->pPosCtrl->AlignmentStatus : -1;
     }
     s_cw_prev = OD_RAM.x6040_controlword;
 }

@@ -145,7 +145,6 @@ int main(void)
   while (1)
   {
     canopen_app_process();
-    HAL_Delay(1);
 
     /* USER CODE END WHILE */
 
