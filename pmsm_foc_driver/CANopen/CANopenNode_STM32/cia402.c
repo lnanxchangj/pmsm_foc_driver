@@ -389,6 +389,17 @@ static void CIA402_StateMachineProcess(void)
             }
             else if (mc_state == RUN)
             {
+                /* [FIX] 状态清理：防止残留指令干扰。
+                 * 刚从 IDLE 启动到 RUN 时，清除所有之前积压的 SDO/PDO 缓冲指令 */
+                if (pMCI[0]) {
+                    pMCI[0]->CommandState = MCI_COMMAND_EXECUTED_SUCCESSFULLY;
+                    pMCI[0]->DirectCommand = MCI_NO_COMMAND;
+                }
+                if (pSTC[0]) {
+                    /* 将 ST 底层速度环的参考点强置为当前实际速度（防止上次停止时的速度残余） */
+                    STC_ForceSpeedReferenceToCurrentSpeed(pSTC[0]);
+                }
+
                 /* 初始化连续位置跟踪器 —— 从当前编码器值开始，不强制清零 */
                 s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
                 if (!s_pos_tracker_ready) {
