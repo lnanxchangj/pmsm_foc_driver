@@ -164,9 +164,17 @@ static void CIA402_UpdateActualValues(void)
     while (s_continuous_pos_float < 0.0f)
         s_continuous_pos_float += (float_t)MODULO_RANGE;
 
-    OD_RAM.x6064_positionActualValue = (int32_t)(s_continuous_pos_float + 0.5f);
-    if (OD_RAM.x6064_positionActualValue >= MODULO_RANGE)
-        OD_RAM.x6064_positionActualValue = 0;
+    int32_t pos_inc = (int32_t)(s_continuous_pos_float + 0.5f);
+    if (pos_inc >= MODULO_RANGE)
+        pos_inc = 0;
+
+    /* 优化显示：如果位置非常接近一圈的终点（例如 7992），则显示为负数（例如 -8），
+     * 避免用户在零点附近调试时看到跳变的数值。 */
+    if (pos_inc > (MODULO_RANGE - 100))
+    {
+        pos_inc -= MODULO_RANGE;
+    }
+    OD_RAM.x6064_positionActualValue = pos_inc;
 
     float_t nominal = (float_t)NOMINAL_CURRENT_A;
     if (nominal < 0.1f)
@@ -193,7 +201,7 @@ static void CIA402_HomingStart(void)
     }
 
     /* 强制硬编码回零速度为 60 RPM */
-    float_t hm_speed_rpm = 60.0f;
+    float_t hm_speed_rpm = 30.0f;
 
     /* 启动回零前，重置对齐状态 */
     if (pPosCtrl[0])
@@ -697,7 +705,7 @@ void CIA402_Init(void)
     OD_RAM.x6041_statusword = SW_NOT_READY_TO_SWITCH_ON_VAL;
     OD_RAM.x6060_modesOfOperation = 1;
     OD_RAM.x6081_profileVelocity = 60;
-    OD_RAM.x6083_profileAcceleration = 300;
+    OD_RAM.x6083_profileAcceleration = 500;
     s_state = CIA402_NOT_READY_TO_SWITCH_ON;
     s_pos_tracker_ready = false;
     s_pp_setpoint_pending = false;
