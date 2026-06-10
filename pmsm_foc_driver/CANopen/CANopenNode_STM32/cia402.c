@@ -37,8 +37,8 @@ static uint32_t s_target_reached_timer = 0;
 /* 回零模式状态 */
 static CIA402_HomingState_t s_homing_state = CIA402_HM_IDLE;
 static uint32_t s_homing_start_tick = 0;
-static int8_t s_homing_method = 35;      /* 缓存 0x6098 */
-static bool s_homing_halted = false;     /* 控制字 bit8 暂停标志 */
+static int8_t s_homing_method = 35;  /* 缓存 0x6098 */
+static bool s_homing_halted = false; /* 控制字 bit8 暂停标志 */
 
 #define CIA402_PI 3.141592653589793f
 #define CIA402_2PI 6.283185307179586f
@@ -128,9 +128,9 @@ static uint16_t CIA402_BuildStatusword(void)
             {
                 float_t spd = MC_GetAverageMecSpeedMotor1_F();
                 if (fabsf(spd) < 1.0f)
-                    sw |= HM_SW_ERR_STOP;   /* 13=1,12=0,10=1: 错误，速度为0 */
+                    sw |= HM_SW_ERR_STOP; /* 13=1,12=0,10=1: 错误，速度为0 */
                 else
-                    sw |= HM_SW_ERR_SPEED;  /* 13=1,12=0,10=0: 错误，速度≠0 */
+                    sw |= HM_SW_ERR_SPEED; /* 13=1,12=0,10=0: 错误，速度≠0 */
             }
             break;
         default:
@@ -190,7 +190,7 @@ static void CIA402_HomingStart(void)
     /* 读取回零参数 */
     s_homing_method = OD_RAM.x6098_homingMethod;
     if (s_homing_method == 0)
-        s_homing_method = 35;  /* 默认方法 35: 仅 Z 脉冲 */
+        s_homing_method = 35; /* 默认方法 35: 仅 Z 脉冲 */
 
     /* 支持所有基于 Z 脉冲的方法 (33~37) */
     if (s_homing_method < 33 || s_homing_method > 37)
@@ -208,17 +208,18 @@ static void CIA402_HomingStart(void)
     {
         /* 读取当前角度，准备进行多圈位置轨迹移动以寻找Z脉冲 */
         int32_t wMecAngleRef = SPD_GetMecAngle(STC_GetSpeedSensor(pPosCtrl[0]->pSTC));
-        
+
         /* 计算回零速度对应的 duration (ST默认是1圈2秒 = 30RPM) */
         float_t target_rpm = hm_speed_rpm;
-        if (target_rpm < 1.0f) target_rpm = 10.0f;
-        
+        if (target_rpm < 1.0f)
+            target_rpm = 10.0f;
+
         /* 计算移动一圈(2PI)需要的时间 */
-        float_t duration = 60.0f / target_rpm; 
-        
+        float_t duration = 60.0f / target_rpm;
+
         /* 发起一个 2PI (1圈) 的位置控制移动 */
         TC_MoveCommand(pPosCtrl[0], (float)(wMecAngleRef) / 10430.378f, 6.283185f, duration);
-        
+
         pPosCtrl[0]->EncoderAbsoluteAligned = false;
         pPosCtrl[0]->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
         pPosCtrl[0]->PositionControlRegulation = ENABLE;
@@ -319,10 +320,12 @@ static void CIA402_HomingProcess(void)
 
         /* 找到零点后必须立即停止电机，避免持续高速运转导致失步或故障 */
         float_t acc_val = (float_t)OD_RAM.x609A_homingAcceleration * CIA402_ACC_SCALE;
-        if (acc_val < 1.0f) acc_val = 1000.0f;
+        if (acc_val < 1.0f)
+            acc_val = 1000.0f;
         float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
         uint16_t stop_ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
-        if (stop_ramp_ms < 10) stop_ramp_ms = 10;
+        if (stop_ramp_ms < 10)
+            stop_ramp_ms = 10;
         MC_ProgramSpeedRampMotor1_F(0.0f, stop_ramp_ms);
 
         s_homing_state = CIA402_HM_COMPLETED;
@@ -391,18 +394,21 @@ static void CIA402_StateMachineProcess(void)
             {
                 /* [FIX] 状态清理：防止残留指令干扰。
                  * 刚从 IDLE 启动到 RUN 时，清除所有之前积压的 SDO/PDO 缓冲指令 */
-                if (pMCI[0]) {
+                if (pMCI[0])
+                {
                     pMCI[0]->CommandState = MCI_COMMAND_EXECUTED_SUCCESSFULLY;
                     pMCI[0]->DirectCommand = MCI_NO_COMMAND;
                 }
-                if (pSTC[0]) {
+                if (pSTC[0])
+                {
                     /* 将 ST 底层速度环的参考点强置为当前实际速度（防止上次停止时的速度残余） */
                     STC_ForceSpeedReferenceToCurrentSpeed(pSTC[0]);
                 }
 
                 /* 初始化连续位置跟踪器 —— 从当前编码器值开始，不强制清零 */
                 s_last_mcsdk_pos_rad = MC_GetCurrentPosition1();
-                if (!s_pos_tracker_ready) {
+                if (!s_pos_tracker_ready)
+                {
                     /* 首次启动：基于编码器当前实际位置初始化（而非清零） */
                     float_t init_pos_rad = MC_GetCurrentPosition1();
                     s_continuous_pos_float = init_pos_rad * CIA402_POS_SCALE;
@@ -435,14 +441,17 @@ static void CIA402_StateMachineProcess(void)
                 }
                 else if (mode == 6) /* HM: 回零模式 —— 等待控制字 bit4 启动 */
                 {
-                    /* 进入回零模式，但不立即开始。
-                     * 等待控制字 bit4 (开始回零操作) 0→1 转换。
-                     * 先禁用位置环，防止干扰。 */
+                    /* [FIX] 使能回零模式时，先通过位置环锁死当前位置，防止电机漂移或疯转 */
+                    float_t sync_pos_rad = MC_GetCurrentPosition1();
+                    MC_SetCtrlPositionAngle1(sync_pos_rad);
                     if (pPosCtrl[0])
-                        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+                    {
+                        pPosCtrl[0]->PositionCtrlStatus = TC_READY_FOR_COMMAND;
+                        pPosCtrl[0]->PositionControlRegulation = ENABLE;
+                    }
                     s_homing_state = CIA402_HM_IDLE;
                     s_homing_halted = false;
-                    printf("[CIA402] ENABLED: Homing Mode - waiting for start (bit4)\r\n");
+                    printf("[CIA402] ENABLED: Homing Mode (Position Locked) - waiting for start (bit4)\r\n");
                 }
 
                 s_last_target_vel = 0;
@@ -470,17 +479,24 @@ static void CIA402_StateMachineProcess(void)
         else if ((cw & 0x0004) == 0) /* Quick Stop (Transition 11) */
         {
             printf("[CIA402] Quick Stop from OPERATION_ENABLED\r\n");
-            if (pPosCtrl[0] && mode == 1) {
+            if (pPosCtrl[0] && mode == 1)
+            {
                 float_t cur_pos = MC_GetCurrentPosition1();
                 MC_ProgramPositionCommandMotor1(cur_pos, 0.1f);
-            } else if (mode == 3) {
+            }
+            else if (mode == 3)
+            {
                 float_t acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
-                if (acc_val < 1.0f) acc_val = 1000.0f;
+                if (acc_val < 1.0f)
+                    acc_val = 1000.0f;
                 float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
                 uint16_t ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
-                if (ramp_ms < 10) ramp_ms = 10;
+                if (ramp_ms < 10)
+                    ramp_ms = 10;
                 MC_ProgramSpeedRampMotor1_F(0.0f, ramp_ms);
-            } else if (mode == 6) {
+            }
+            else if (mode == 6)
+            {
                 MC_ProgramSpeedRampMotor1_F(0.0f, 100);
                 s_homing_state = CIA402_HM_IDLE;
             }
@@ -552,7 +568,7 @@ static void CIA402_StateMachineProcess(void)
             /* ---- 回零模式：监控控制字 bit4 (开始回零操作) ---- */
             if (mode == 6)
             {
-                bool bit4_now  = (cw & CW_NEW_SETPOINT) != 0u;  /* HM 模式中 bit4 = 开始回零 */
+                bool bit4_now = (cw & CW_NEW_SETPOINT) != 0u; /* HM 模式中 bit4 = 开始回零 */
                 bool bit4_prev = (s_cw_prev & CW_NEW_SETPOINT) != 0u;
 
                 /* bit4 上升沿或电平 → 启动回零 (边沿丢失时电平兜底) */
@@ -593,7 +609,7 @@ static void CIA402_StateMachineProcess(void)
                 /* 触发条件：
                  * ① 标准: bit4 0→1 上升沿
                  * ② 兼容: bit4=1 且未在等待应答 (主机先清零再置位但边沿被跨周期吞掉) */
-                bool edge_trigger  = (new_setpoint && !last_setpoint);
+                bool edge_trigger = (new_setpoint && !last_setpoint);
                 bool level_trigger = (new_setpoint && !s_pp_setpoint_pending);
 
                 if (edge_trigger || level_trigger)
