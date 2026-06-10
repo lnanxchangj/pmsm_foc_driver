@@ -43,6 +43,12 @@ static bool s_homing_halted = false; /* 控制字 bit8 暂停标志 */
 #define CIA402_PI 3.141592653589793f
 #define CIA402_2PI 6.283185307179586f
 
+/* ============================================================
+ * 功能开关：固定运动参数
+ * 开启后将忽略上位机通过 0x6081/0x6083 设置的值，改用硬编码固定值
+ * ============================================================ */
+#define CIA402_USE_FIXED_DYNAMICS
+
 /* 单圈模数轴定义 */
 #define MODULO_RANGE 8000
 #define MODULO_HALF 4000
@@ -639,9 +645,14 @@ static void CIA402_StateMachineProcess(void)
                     }
 
                     float_t final_target_rad = MC_GetCtrlPositionAngle1() + diff_rad;
-                    float_t vel_rpm = (float_t)OD_RAM.x6081_profileVelocity;
+                    float_t vel_rpm;
+#ifdef CIA402_USE_FIXED_DYNAMICS
+                    vel_rpm = 60.0f; /* 固定 60 RPM */
+#else
+                    vel_rpm = (float_t)OD_RAM.x6081_profileVelocity;
                     if (vel_rpm < 1.0f)
                         vel_rpm = 60.0f;
+#endif
                     float_t vel_rad_s = (vel_rpm * CIA402_2PI) / 60.0f;
                     float_t dur = fabsf(diff_rad) / vel_rad_s;
                     if (dur < 0.01f)
@@ -666,10 +677,15 @@ static void CIA402_StateMachineProcess(void)
                 if (target_vel != s_last_target_vel)
                 {
                     float_t target_rpm = (float_t)target_vel / CIA402_VEL_SCALE;
+                    float_t acc_val;
 
-                    float_t acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
+#ifdef CIA402_USE_FIXED_DYNAMICS
+                    acc_val = 500.0f; /* 固定加速度 500 RPM/s */
+#else
+                    acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
                     if (acc_val < 1.0f)
                         acc_val = 1000.0f;
+#endif
 
                     float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
                     float_t diff_rpm = fabsf(target_rpm - current_rpm);
