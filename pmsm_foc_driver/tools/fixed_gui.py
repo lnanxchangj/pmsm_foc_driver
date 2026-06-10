@@ -368,6 +368,37 @@ class CanMasterWindow(QMainWindow):
         raw_hm_group.setLayout(raw_hm_layout)
         main_layout.addWidget(raw_hm_group)
 
+        # ──── 6.7. 快捷 RAW PP 运动指令 ────
+        raw_pp_group = QGroupBox("6.7. 快捷 RAW PP 运动指令")
+        raw_pp_layout = QGridLayout()
+
+        btn_pp_speed = QPushButton("1. PP 速度 (43548)")
+        btn_pp_speed.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x23, 0x81, 0x60, 0x00, 0x1C, 0xAA, 0x00, 0x00]))
+        raw_pp_layout.addWidget(btn_pp_speed, 0, 0)
+
+        btn_pp_acc = QPushButton("2. PP 加速度 (32)")
+        btn_pp_acc.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x23, 0x83, 0x60, 0x00, 0x20, 0x00, 0x00, 0x00]))
+        raw_pp_layout.addWidget(btn_pp_acc, 0, 1)
+
+        btn_pp_target = QPushButton("3. 目标位置 (4000)")
+        btn_pp_target.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x23, 0x7A, 0x60, 0x00, 0xA0, 0x0F, 0x00, 0x00]))
+        raw_pp_layout.addWidget(btn_pp_target, 0, 2)
+
+        btn_pp_start = QPushButton("4. 启动运动 (0x1F)")
+        btn_pp_start.clicked.connect(lambda: self.send_frame(0x200 + self.node_id, [0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        raw_pp_layout.addWidget(btn_pp_start, 1, 0)
+
+        btn_pp_ret = QPushButton("5. 复位握手 (0x0F)")
+        btn_pp_ret.clicked.connect(lambda: self.send_frame(0x200 + self.node_id, [0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        raw_pp_layout.addWidget(btn_pp_ret, 1, 1)
+
+        btn_pp_check = QPushButton("6. 检查位置 (0x6064)")
+        btn_pp_check.clicked.connect(lambda: self.send_frame(0x600 + self.node_id, [0x40, 0x64, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00]))
+        raw_pp_layout.addWidget(btn_pp_check, 1, 2)
+
+        raw_pp_group.setLayout(raw_pp_layout)
+        main_layout.addWidget(raw_pp_group)
+
         # ──── 7. 日志 / 接收区 ────
         log_group = QGroupBox("7. 日志 & CAN 接收")
         log_layout = QVBoxLayout()
