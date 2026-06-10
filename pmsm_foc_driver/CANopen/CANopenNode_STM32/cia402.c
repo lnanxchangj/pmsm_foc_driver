@@ -192,8 +192,8 @@ static void CIA402_HomingStart(void)
         return;
     }
 
-    /* 强制硬编码回零速度为 10 RPM */
-    float_t hm_speed_rpm = 10.0f;
+    /* 强制硬编码回零速度为 60 RPM */
+    float_t hm_speed_rpm = 60.0f;
 
     /* 启动回零前，重置对齐状态 */
     if (pPosCtrl[0])
@@ -697,7 +697,7 @@ void CIA402_Init(void)
     OD_RAM.x6041_statusword = SW_NOT_READY_TO_SWITCH_ON_VAL;
     OD_RAM.x6060_modesOfOperation = 1;
     OD_RAM.x6081_profileVelocity = 60;
-    OD_RAM.x6083_profileAcceleration = 3000;
+    OD_RAM.x6083_profileAcceleration = 300;
     s_state = CIA402_NOT_READY_TO_SWITCH_ON;
     s_pos_tracker_ready = false;
     s_pp_setpoint_pending = false;
