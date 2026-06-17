@@ -491,9 +491,14 @@ static void CIA402_StateMachineProcess(void)
             }
             else if (mode == 3)
             {
-                float_t acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
+                float_t acc_val;
+#ifdef CIA402_USE_FIXED_DYNAMICS
+                acc_val = 600.0f;
+#else
+                acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
                 if (acc_val < 1.0f)
                     acc_val = 1000.0f;
+#endif
                 float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
                 uint16_t ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
                 if (ramp_ms < 10)
@@ -680,7 +685,7 @@ static void CIA402_StateMachineProcess(void)
                     float_t acc_val;
 
 #ifdef CIA402_USE_FIXED_DYNAMICS
-                    acc_val = 500.0f; /* 固定加速度 500 RPM/s */
+                    acc_val = 600.0f; /* 固定加速度 600 RPM/s */
 #else
                     acc_val = (float_t)OD_RAM.x6083_profileAcceleration * CIA402_ACC_SCALE;
                     if (acc_val < 1.0f)
@@ -744,7 +749,7 @@ void CIA402_Init(void)
     OD_RAM.x6041_statusword = SW_NOT_READY_TO_SWITCH_ON_VAL;
     OD_RAM.x6060_modesOfOperation = 1;
     OD_RAM.x6081_profileVelocity = 60;
-    OD_RAM.x6083_profileAcceleration = 500;
+    OD_RAM.x6083_profileAcceleration = 600;
     s_state = CIA402_NOT_READY_TO_SWITCH_ON;
     s_pos_tracker_ready = false;
     s_pp_setpoint_pending = false;
