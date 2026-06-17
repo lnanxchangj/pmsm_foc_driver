@@ -123,7 +123,7 @@ PosCtrl_Handle_t PosCtrlM1 =
 {
   .SamplingTime  = 1.0f/MEDIUM_FREQUENCY_TASK_RATE,
   .SysTickPeriod = 1.0f/SYS_TICK_FREQUENCY,
-  .AlignmentCfg  = TC_ABSOLUTE_ALIGNMENT_NOT_SUPPORTED,
+  .AlignmentCfg  = TC_ABSOLUTE_ALIGNMENT_SUPPORTED,
 };
 
 /**

@@ -62,6 +62,9 @@ void Error_Handler(void);
 #define Start_Stop_Pin GPIO_PIN_4
 #define Start_Stop_GPIO_Port GPIOE
 #define Start_Stop_EXTI_IRQn EXTI4_IRQn
+#define M1_ENCODER_Z_Pin GPIO_PIN_6
+#define M1_ENCODER_Z_GPIO_Port GPIOE
+#define M1_ENCODER_Z_EXTI_IRQn EXTI9_5_IRQn
 #define M1_EN_DRIVER_Pin GPIO_PIN_10
 #define M1_EN_DRIVER_GPIO_Port GPIOF
 #define M1_CURR_AMPL_W_Pin GPIO_PIN_3

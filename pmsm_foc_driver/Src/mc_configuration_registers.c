@@ -42,9 +42,9 @@ const GlobalConfig_reg_t globalConfig_reg =
 
 static const ApplicationConfig_reg_t M1_ApplicationConfig_reg =
 {
-  .maxMechanicalSpeed = 6000,
+  .maxMechanicalSpeed = 5000,
   .maxReadableCurrent = M1_MAX_READABLE_CURRENT,
-  .nominalCurrent     = 10,
+  .nominalCurrent     = 4,
   .nominalVoltage     = 24,
   .driveType          = DRIVE_TYPE_M1,
 };
@@ -53,11 +53,11 @@ static const ApplicationConfig_reg_t M1_ApplicationConfig_reg =
 static const MotorConfig_reg_t M1_MotorConfig_reg =
 {
   .polePairs  = 4,
-  .ratedFlux  = 3.0,
-  .rs         = 0.59,
-  .ls         = 0.00066*1.000,
-  .ld         = 0.00066,
-  .maxCurrent = 10,
+  .ratedFlux  = 2.1,
+  .rs         = 0.35,
+  .ls         = 0.00064*1.000,
+  .ld         = 0.00064,
+  .maxCurrent = 4,
   .name = "42JSF840AS-1000-8"
 };
 

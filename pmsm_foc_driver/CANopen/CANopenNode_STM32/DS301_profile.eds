@@ -14,9 +14,9 @@ ModifiedBy=
 
 [DeviceInfo]
 VendorName=
-VendorNumber=
+VendorNumber=0
 ProductName=New Product
-ProductNumber=
+ProductNumber=0
 RevisionNumber=0
 BaudRate_10=1
 BaudRate_20=1

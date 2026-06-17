@@ -23,6 +23,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "trajectory_ctrl.h"
 #include "speed_pos_fdbk.h"
+#include "pid_regulator.h"
 
 /** @addtogroup MCSDK
   * @{
@@ -436,6 +437,7 @@ void TC_EncAlignmentCommand(PosCtrl_Handle_t *pHandle)
     {
       /* If index is not supprted set the alignment angle as zero reference */
       pHandle->pENC->_Super.wMecAngle = 0;
+      pHandle->Theta = 0.0f;
       pHandle->AlignmentStatus = TC_ALIGNMENT_COMPLETED;
       pHandle->PositionCtrlStatus = TC_READY_FOR_COMMAND;
       pHandle->PositionControlRegulation = ENABLE;

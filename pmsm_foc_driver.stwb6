@@ -1,5 +1,5 @@
 {
-  "version": 16,
+  "version": 8,
   "algorithm": "FOC",
   "description": "",
   "workBenchVersion": "6.4.2",
@@ -730,11 +730,11 @@
             "speedFIFODepth": "Number.NaN",
             "inputFilterDuration": "Number.NaN",
             "reverseCountDirection": false,
-            "encoderModeAbsolute": false,
+            "encoderModeAbsolute": true,
             "startUpParam": {
               "duration": "Number.NaN",
               "electricalAlignAngle": "Number.NaN",
-              "finalCurrent": "Number.NaN"
+              "finalCurrent": 4
             }
           }
         },
@@ -822,22 +822,22 @@
             "P": "Number.NaN",
             "I": "Number.NaN"
           },
-          "cutOffFrequency": "Number.NaN",
+          "cutOffFrequency": 5000,
           "useMTPA": false,
           "feedForward": false,
           "MTPATarget": "Number.NaN"
         },
         "speedReg": {
           "executionRate": "Number.NaN",
-          "targetSpeed": "Number.NaN",
+          "targetSpeed": 3000,
           "commutationTime": "Number.NaN",
           "KpKi": {
             "P": {
-              "num": 30000,
+              "num": 2613,
               "den": 2048
             },
             "I": {
-              "num": 5800,
+              "num": 3,
               "den": 16384
             }
           },
@@ -887,15 +887,15 @@
           "executionRate": "Number.NaN",
           "KpKiKd": {
             "P": {
-              "num": 1000,
+              "num": 10000,
               "den": 1024
             },
             "D": {
-              "num": 500,
+              "num": 1000,
               "den": 16
             },
             "I": {
-              "num": 500,
+              "num": 1000,
               "den": 32768
             }
           }
@@ -914,16 +914,16 @@
         "label": "",
         "description": "",
         "polePairs": "Number.NaN",
-        "mmsType": "",
-        "rs": "Number.NaN",
-        "ls": "Number.NaN",
+        "mmsType": "SM-PMSM",
+        "rs": 0.35,
+        "ls": 0.64,
         "mmsLd_lq_ratio": "Number.NaN",
-        "maxCurrent": "Number.NaN",
+        "maxCurrent": 4,
         "maxDCVoltage": "Number.NaN",
-        "BEmfConstant": "Number.NaN",
-        "inertia": "Number.NaN",
+        "BEmfConstant": 2.05,
+        "inertia": 4,
         "friction": "Number.NaN",
-        "maxRatedSpeed": 6000,
+        "maxRatedSpeed": 5000,
         "hasHallSensor": true,
         "hallSensor": {
           "sensorsDisplacement": "Number.NaN",
@@ -931,8 +931,18 @@
         },
         "hasQuadratureEncoder": true,
         "quadratureEncoder": {
-          "pulsesPerMechanicalRevolution": "Number.NaN",
+          "pulsesPerMechanicalRevolution": 2000,
           "hasIndexPin": true
+        },
+        "nominalCurrent": "Number.NaN",
+        "nominalDCVoltage": "Number.NaN"
+      },
+      "powerSwitches_0": {
+        "setting": {
+          "PWMFrequency": "Number.NaN",
+          "chargeBootCapDuty": 40,
+          "chargeBootCapMs": "Number.NaN",
+          "drivingTopology": ""
         }
       }
     }

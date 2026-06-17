@@ -264,6 +264,24 @@ void EXTI4_IRQHandler(void)
 
 }
 
+/**
+  * @brief  This function handles M1 Encoder Index IRQ on PIN PE6.
+  */
+
+void EXTI9_5_IRQHandler(void)
+{
+  /* USER CODE BEGIN ENCODER Z INDEX M1 */
+  if (0U != LL_EXTI_ReadFlag_0_31(LL_EXTI_LINE_6))
+  {
+    LL_EXTI_ClearFlag_0_31(LL_EXTI_LINE_6);
+    TC_EncoderReset(&PosCtrlM1);
+  }
+  else
+  {
+    /* Nothing to do */
+  }
+}
+
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */

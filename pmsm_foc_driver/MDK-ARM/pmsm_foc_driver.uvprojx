@@ -54,7 +54,7 @@
           <CreateLib>0</CreateLib>
           <CreateHexFile>1</CreateHexFile>
           <DebugInformation>1</DebugInformation>
-          <BrowseInformation>1</BrowseInformation>
+          <BrowseInformation>0</BrowseInformation>
           <ListingPath></ListingPath>
           <HexFormatSelection>1</HexFormatSelection>
           <Merge32K>0</Merge32K>
@@ -81,7 +81,7 @@
           </BeforeMake>
           <AfterMake>
             <RunUserProg1>0</RunUserProg1>
-            <RunUserProg2>1</RunUserProg2>
+            <RunUserProg2>0</RunUserProg2>
             <UserProg1Name></UserProg1Name>
             <UserProg2Name></UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
@@ -1237,19 +1237,9 @@
               <FilePath>..\CANopen\CANopenNode_STM32\OD.c</FilePath>
             </File>
             <File>
-              <FileName>cia402.c</FileName>
+              <FileName>CIA402.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\CANopen\CANopenNode_STM32\cia402.c</FilePath>
-            </File>
-            <File>
-              <FileName>motor_control_interface.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\CANopen\CANopenNode_STM32\motor_control_interface.c</FilePath>
-            </File>
-            <File>
-              <FileName>cia402device.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\CANopen\CANopenNode_STM32\cia402device.c</FilePath>
+              <FilePath>..\CANopen\CANopenNode_STM32\CIA402.c</FilePath>
             </File>
           </Files>
         </Group>

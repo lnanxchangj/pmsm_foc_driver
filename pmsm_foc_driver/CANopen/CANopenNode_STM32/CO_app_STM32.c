@@ -32,7 +32,8 @@
 
 #include "CO_storageBlank.h"
 #include "OD.h"
-#include "cia402.h"
+
+#include "CIA402.h"
 
 CANopenNodeSTM32 *
     canopenNodeSTM32; // It will be set by canopen_app_init and will be used across app to get access to CANOpen objects
@@ -113,10 +114,7 @@ int canopen_app_init(CANopenNodeSTM32 *_canopenNodeSTM32)
 #endif
 
     canopen_app_resetCommunication();
-
-    /* Initialize CIA402 state machine - motor control is initialized via MX_MotorControl_Init() in main.c */
-    cia402_init();
-
+    CIA402_Init();
     return 0;
 }
 
@@ -235,12 +233,13 @@ void canopen_app_process()
         uint32_t timeDifference_us = (time_current - time_old) * 1000;
         time_old = time_current;
         reset_status = CO_process(CO, false, timeDifference_us, NULL);
-
-        /* CIA402 state machine processing */
-        cia402_process();
-
+        CIA402_Process();
         canopenNodeSTM32->outStatusLEDRed = CO_LED_RED(CO->LEDs, CO_LED_CANopen);
         canopenNodeSTM32->outStatusLEDGreen = CO_LED_GREEN(CO->LEDs, CO_LED_CANopen);
+
+        /* Update physical LEDs (Assuming active low) */
+        HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, canopenNodeSTM32->outStatusLEDGreen ? GPIO_PIN_RESET : GPIO_PIN_SET);
+        HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, canopenNodeSTM32->outStatusLEDRed ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
         if (reset_status == CO_RESET_COMM)
         {
