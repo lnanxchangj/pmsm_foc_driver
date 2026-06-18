@@ -379,7 +379,7 @@ static void CIA402_StateMachineProcess(void)
     MCI_State_t mc_state = MC_GetSTMStateMotor1();
     int8_t mode = OD_RAM.x6060_modesOfOperation;
 
-    if (MC_GetCurrentFaultsMotor1() != 0u && s_state != CIA402_FAULT && s_state != CIA402_FAULT_REACTION_ACTIVE)
+    if (MC_GetOccurredFaultsMotor1() != 0u && s_state != CIA402_FAULT && s_state != CIA402_FAULT_REACTION_ACTIVE)
     {
         s_state = CIA402_FAULT_REACTION_ACTIVE;
         s_fault_reaction_tick = HAL_GetTick();
