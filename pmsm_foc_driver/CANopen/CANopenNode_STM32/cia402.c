@@ -98,7 +98,7 @@ static uint16_t CIA402_BuildStatusword(void)
     sw |= SW_REMOTE;
     if (s_state != CIA402_NOT_READY_TO_SWITCH_ON)
         sw |= SW_VOLTAGE_ENABLED;
-    if (MC_GetCurrentFaultsMotor1() != 0u)
+    if (MC_GetOccurredFaultsMotor1() != 0u)
         sw |= SW_WARNING;
 
     /* 握手应答 (PP 模式) */
@@ -177,7 +177,7 @@ static uint32_t CIA402_MapMCSDKFaults(uint16_t mc_faults)
 static void CIA402_UpdateActualValues(void)
 {
     OD_RAM.x606C_velocityActualValue = (int32_t)(MC_GetAverageMecSpeedMotor1_F() * CIA402_VEL_SCALE);
-    OD_RAM.x2000_manufacturerParameter = CIA402_MapMCSDKFaults(MC_GetCurrentFaultsMotor1());
+    OD_RAM.x2000_manufacturerParameter = CIA402_MapMCSDKFaults(MC_GetOccurredFaultsMotor1());
 
     if (!s_pos_tracker_ready)
         return;
