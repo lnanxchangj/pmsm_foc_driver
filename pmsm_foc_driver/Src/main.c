@@ -119,7 +119,7 @@ int main(void)
   canOpenNodeSTM32.baudrate = 500;       /* 500Kbps */
   canopen_app_init(&canOpenNodeSTM32);
   
-  MC_StopMotor1();
+  // MC_StopMotor1();
 
   // MC_StopMotor1();
   // HAL_Delay(100);

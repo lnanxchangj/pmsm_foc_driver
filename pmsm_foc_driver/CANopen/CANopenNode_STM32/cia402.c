@@ -161,6 +161,16 @@ static uint32_t CIA402_MapMCSDKFaults(uint16_t mc_faults)
     if (mc_faults & MC_START_UP) err_2000 |= (1 << 14); // Command error
     if (mc_faults & MC_DURATION) err_2000 |= (1 << 3); // Control error
     
+    /* 自定义检测：主控先上电但驱动板未上电时，电流偏置校准会失败（读取到 0V）
+       正常的 1.65V 偏置在 ADC 中应该远大于 500（12位下约2048）。
+       如果测出的偏置值过低，则判断为“设置数据无效”。 */
+    PolarizationOffsets_t offsets;
+    if (MC_GetPolarizationOffsetsMotor1(&offsets)) {
+        if (offsets.phaseAOffset < 500 && offsets.phaseBOffset < 500) {
+            err_2000 |= (1 << 2); // Bit 2: 设置数据无效 (Offset calibration invalid)
+        }
+    }
+    
     return err_2000;
 }
 
