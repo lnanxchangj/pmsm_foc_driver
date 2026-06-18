@@ -147,9 +147,27 @@ static uint16_t CIA402_BuildStatusword(void)
     return sw;
 }
 
+static uint32_t CIA402_MapMCSDKFaults(uint16_t mc_faults)
+{
+    uint32_t err_2000 = 0;
+    
+    if (mc_faults & MC_OVER_VOLT) err_2000 |= (1 << 12);
+    if (mc_faults & MC_UNDER_VOLT) err_2000 |= (1 << 13);
+    if (mc_faults & MC_OVER_TEMP) err_2000 |= (1 << 11); // Drive overtemp
+    if (mc_faults & MC_SPEED_FDBK) err_2000 |= (1 << 5); // Feedback error
+    if (mc_faults & MC_OVER_CURR) err_2000 |= (1 << 8); // Overcurrent
+    if (mc_faults & MC_DP_FAULT) err_2000 |= (1 << 1); // Short circuit
+    if (mc_faults & MC_SW_ERROR) err_2000 |= (1 << 14); // Command error
+    if (mc_faults & MC_START_UP) err_2000 |= (1 << 14); // Command error
+    if (mc_faults & MC_DURATION) err_2000 |= (1 << 3); // Control error
+    
+    return err_2000;
+}
+
 static void CIA402_UpdateActualValues(void)
 {
     OD_RAM.x606C_velocityActualValue = (int32_t)(MC_GetAverageMecSpeedMotor1_F() * CIA402_VEL_SCALE);
+    OD_RAM.x2000_manufacturerParameter = CIA402_MapMCSDKFaults(MC_GetCurrentFaultsMotor1());
 
     if (!s_pos_tracker_ready)
         return;
