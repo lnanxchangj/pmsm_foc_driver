@@ -234,16 +234,23 @@ static void CIA402_HomingStart(void)
         return;
     }
 
-    /* 强制硬编码回零速度为 60 RPM */
+    /* 强制硬编码回零速度为 30 RPM (单圈2秒) */
     float_t hm_speed_rpm = 30.0f;
 
     /* 启动回零前，重置对齐状态 */
     if (pPosCtrl[0])
     {
+        /* [FIX] 必须先重置对齐状态再调用 TC_MoveCommand：
+         * 1. 确保 TC_MoveExecution 的零点超时检测能正确工作
+         * 2. TC_EncoderReset (Z脉冲ISR) 依赖 EncoderAbsoluteAligned=false 和
+         *    AlignmentStatus=TC_ZERO_ALIGNMENT_START 才能触发编码器归零 */
+        pPosCtrl[0]->EncoderAbsoluteAligned = false;
+        pPosCtrl[0]->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
+
         /* 读取当前角度，准备进行多圈位置轨迹移动以寻找Z脉冲 */
         int32_t wMecAngleRef = SPD_GetMecAngle(STC_GetSpeedSensor(pPosCtrl[0]->pSTC));
 
-        /* 计算回零速度对应的 duration (ST默认是1圈2秒 = 30RPM) */
+        /* 计算回零速度对应的 duration (30 RPM → 单圈2秒) */
         float_t target_rpm = hm_speed_rpm;
         if (target_rpm < 1.0f)
             target_rpm = 10.0f;
@@ -251,11 +258,16 @@ static void CIA402_HomingStart(void)
         /* 计算移动一圈(2PI)需要的时间 */
         float_t duration = 60.0f / target_rpm;
 
-        /* 发起一个 2PI (1圈) 的位置控制移动 */
-        TC_MoveCommand(pPosCtrl[0], (float)(wMecAngleRef) / 10430.378f, 6.283185f, duration);
+        /* 发起一个 2PI (1圈) 的位置控制移动，若失败则立即报错 */
+        if (!TC_MoveCommand(pPosCtrl[0], (float)(wMecAngleRef) / 10430.378f, 6.283185f, duration))
+        {
+            /* TC_MoveCommand 失败通常意味着 PositionCtrlStatus 不是
+             * TC_READY_FOR_COMMAND，轨迹未编程，回零无法进行 */
+            s_homing_state = CIA402_HM_ERROR;
+            // printf("[CIA402] Homing ERROR: TC_MoveCommand failed\r\n");
+            return;
+        }
 
-        pPosCtrl[0]->EncoderAbsoluteAligned = false;
-        pPosCtrl[0]->AlignmentStatus = TC_ZERO_ALIGNMENT_START;
         pPosCtrl[0]->PositionControlRegulation = ENABLE;
     }
 
@@ -271,7 +283,11 @@ static void CIA402_HomingStart(void)
  * ============================================================ */
 static void CIA402_HomingStop(void)
 {
-    /* 立即在速度模式下停止电机 */
+    /* [FIX] 先关闭位置环使能，防止 TC_PositionRegulation 与
+     * 速度停止斜坡冲突，确保电机能可靠停止。 */
+    if (pPosCtrl[0])
+        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+    /* 在速度模式下停止电机 */
     MC_ProgramSpeedRampMotor1_F(0.0f, 100);
     s_homing_halted = true;
     s_homing_state = CIA402_HM_HALTED;
@@ -315,6 +331,9 @@ static void CIA402_HomingProcess(void)
     if (HAL_GetTick() - s_homing_start_tick > HOMING_TIMEOUT_MS)
     {
         s_homing_state = CIA402_HM_ERROR;
+        /* [FIX] 关闭位置环使能后再停止斜坡，避免位置环与停止指令冲突 */
+        if (pPosCtrl[0])
+            pPosCtrl[0]->PositionControlRegulation = DISABLE;
         if (pSTC[0])
             STC_StopRamp(pSTC[0]);
         // printf("[CIA402] Homing ERROR: timeout (>%d ms)\r\n", HOMING_TIMEOUT_MS);
@@ -351,15 +370,21 @@ static void CIA402_HomingProcess(void)
         OD_RAM.x6064_positionActualValue = s_target_pos_inc;
         OD_RAM.x607A_targetPosition = s_target_pos_inc;
 
-        /* 找到零点后必须立即停止电机，避免持续高速运转导致失步或故障 */
-        float_t acc_val = (float_t)OD_RAM.x609A_homingAcceleration * CIA402_ACC_SCALE;
-        if (acc_val < 1.0f)
-            acc_val = 1000.0f;
+        /* [FIX] 回零完成后的电机停止与位置保持：
+         * TC_EncoderReset (Z脉冲ISR) 已完成编码器归零 + Theta=0 +
+         * PositionCtrlStatus=TC_READY_FOR_COMMAND，轨迹已终止。
+         * 位置环误差 = Theta - 编码器 = 0 - 0 = 0，PID 自然保持电机在零点。
+         *
+         * 原来在此处调用 MC_ProgramSpeedRampMotor1_F(0.0f, ...) 走速度斜坡，
+         * 但 TC_PositionRegulation 每周期将控制模式切回 MCM_TORQUE_MODE，
+         * 速度斜坡与位置环争夺控制权，反而导致刹车不可靠、位置过冲。
+         * 此处不再调用速度斜坡，让位置环独立完成停止和位置保持。 */
         float_t current_rpm = MC_GetAverageMecSpeedMotor1_F();
-        uint16_t stop_ramp_ms = (uint16_t)((fabsf(current_rpm) / acc_val) * 1000.0f);
-        if (stop_ramp_ms < 10)
-            stop_ramp_ms = 10;
-        MC_ProgramSpeedRampMotor1_F(0.0f, stop_ramp_ms);
+        if (fabsf(current_rpm) > 100.0f)
+        {
+            /* 异常保护：速度异常偏高时（非正常回零速度），强制停止 */
+            MC_ProgramSpeedRampMotor1_F(0.0f, 100);
+        }
 
         s_homing_state = CIA402_HM_COMPLETED;
         // printf("[CIA402] Homing COMPLETED: pos=%ld, offset=%ld. Stopping motor...\r\n", (long)s_target_pos_inc, (long)home_offset);
@@ -594,8 +619,17 @@ static void CIA402_StateMachineProcess(void)
                 }
                 else if (mode == 6) /* HM: 回零模式 —— 等待控制字 bit4 启动 */
                 {
+                    /* [FIX] 与 OPERATION_ENABLED 入口路径对齐：
+                     * 同步位置角、清理 PositionCtrlStatus、使能位置环锁住当前位置，
+                     * 防止 TC_MoveCommand 因 PositionCtrlStatus 残留旧状态而静默失败，
+                     * 导致位置环以错误的 Theta 驱动电机快速旋转。 */
+                    float_t sync_pos_rad = MC_GetCurrentPosition1();
+                    MC_SetCtrlPositionAngle1(sync_pos_rad);
                     if (pPosCtrl[0])
-                        pPosCtrl[0]->PositionControlRegulation = DISABLE;
+                    {
+                        pPosCtrl[0]->PositionCtrlStatus = TC_READY_FOR_COMMAND;
+                        pPosCtrl[0]->PositionControlRegulation = ENABLE;
+                    }
                     s_homing_state = CIA402_HM_IDLE;
                     s_homing_halted = false;
                     // printf("[CIA402] Mode Switched to HM (6) - waiting for start (bit4)\r\n");
